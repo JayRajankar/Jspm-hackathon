@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-950 text-slate-100 font-sans antialiased;
+  }
+}
+
+@layer components {
+  .card-panel {
+    @apply bg-slate-900/50 border border-slate-700/50 rounded-xl backdrop-blur-sm p-4;
+  }
+  .input-field {
+    @apply bg-slate-800 border border-slate-700 rounded-md p-2 text-sm text-white focus:ring-2 focus:ring-electric-cyan focus:outline-none transition-all;
+  }
+}
