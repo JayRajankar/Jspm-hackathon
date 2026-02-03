@@ -58,10 +58,16 @@ function App() {
             <div className="xl:col-span-2 space-y-6">
               <KPIPanel data={data} riskAnalysis={riskAnalysis} />
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <RadialGauge value={riskAnalysis.risk} label="Failure Probability" />
+              {selectedProducts.length === 1 ? (
+                // Single product: show gauge + trend graph side by side
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <RadialGauge value={riskAnalysis.risk} label="Failure Probability" />
+                  <TrendGraph history={history} selectedProducts={selectedProducts} />
+                </div>
+              ) : (
+                // Multiple products: expand trend graph to full width
                 <TrendGraph history={history} selectedProducts={selectedProducts} />
-              </div>
+              )}
 
               {/* Fleet Risk Map - Always visible if products selected, or just placeholder */}
               <div className="bg-slate-900/50 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm min-h-[400px] shadow-2xl">

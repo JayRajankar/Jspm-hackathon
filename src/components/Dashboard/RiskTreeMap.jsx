@@ -56,17 +56,20 @@ const CustomTooltip = ({ active, payload }) => {
 const RiskTreeMap = ({ data }) => {
     if (!data || data.length === 0) {
         return (
-            <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700/50 h-64 flex items-center justify-center text-slate-500">
-                Select multiple products to view Fleet Risk Map
+            <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700/50 h-64 flex items-center justify-center text-slate-500" style={{ minWidth: 0, minHeight: 0 }}>
+                <div className="text-center">
+                    <p className="font-semibold mb-1">Select Multiple Products</p>
+                    <p className="text-xs text-slate-600">to view complete fleet risk overview</p>
+                </div>
             </div>
         );
     }
 
     return (
-        <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700/50 h-96">
+        <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700/50 h-96" style={{ minWidth: 0, minHeight: 0 }}>
             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                 <span className="w-2 h-6 bg-purple-500 rounded-full"></span>
-                Fleet Risk Assessment
+                Complete Fleet Risk Assessment
             </h3>
             <ResponsiveContainer width="100%" height="100%">
                 <Treemap

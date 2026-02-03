@@ -72,14 +72,30 @@ except Exception as e:
      print(f"❌ Error loading calibration data: {e}")
 
 # Load Dataset for Product Stats
-DATASET_PATH = "../../generalized_dff.csv"
+DATASET_PATH = "generalized_dff.csv"
 product_df = None
 try:
     if os.path.exists(DATASET_PATH):
         product_df = pd.read_csv(DATASET_PATH)
         print("✅ Dataset loaded for product lookup.")
     else:
-        print("⚠️ Warning: generalized_dff.csv not found. Product lookup will fail.")
+        # Development fallback: generate a small demo dataset so the UI can function
+        print("⚠️ generalized_dff.csv not found — using generated demo dataset for development.")
+        demo_rows = []
+        for pid in range(1, 11):
+            for udi in range(1, 6):
+                demo_rows.append({
+                    "Product ID": f"Product_{pid}",
+                    "UDI": udi,
+                    "Air temperature": 295 + (pid % 5) + (udi * 0.1),
+                    "Process temperature": 305 + (pid % 7) + (udi * 0.15),
+                    "Rotational speed": 1200 + (pid * 50) + (udi * 10),
+                    "Torque": 10 + (pid * 2) + (udi * 0.5),
+                    "Tool wear": (udi * 5) % 250,
+                    "Type": ["L","M","H"][pid % 3]
+                })
+        product_df = pd.DataFrame(demo_rows)
+        print("✅ Demo dataset generated (development only).")
 except Exception as e:
     print(f"❌ Error loading dataset: {e}")
 

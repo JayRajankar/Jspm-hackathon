@@ -7,82 +7,32 @@ export const useSensorSimulation = () => {
     const [isRunning, setIsRunning] = useState(false);
     const [riskAnalysis, setRiskAnalysis] = useState(calculateRisk(initialSensorData));
     const [logs, setLogs] = useState([]);
-    const [multiSimState, setMultiSimState] = useState({});
     const [selectedProducts, setSelectedProducts] = useState([]);
     const [fleetData, setFleetData] = useState([]);
 
     // History Playback State
     const [historyCache, setHistoryCache] = useState({}); // { pid: [dataPoints] }
-    const [playbackIndex, setPlaybackIndex] = useState({}); // { pid: currentIndex }
+    const [playbackIndex, setPlaybackIndex] = useState(0); // Current index for single-product playback
+    const [staticMultiHistory, setStaticMultiHistory] = useState([]); // Pre-compiled all-product history (static)
 
-    // Simulation Loop (Historical Playback)
+    // Simulation Loop (Single-Product Live Playback OR static multi-product display)
     const simulateStep = useCallback(() => {
-        const timestamp = new Date().toLocaleTimeString();
-
-        if (selectedProducts.length > 1) {
-            // Multi-Product Playback
-            setMultiSimState(prev => {
-                const nextState = { ...prev };
-                const historyPoint = { timestamp };
-
-                selectedProducts.forEach(pid => {
-                    const productHistory = historyCache[pid];
-                    if (productHistory && productHistory.length > 0) {
-                        const idx = playbackIndex[pid] || 0;
-                        const nextIdx = (idx + 1) % productHistory.length;
-
-                        const point = productHistory[nextIdx];
-                        nextState[pid] = point;
-                        historyPoint[`Product ${pid}`] = point.risk;
-
-                        // Batch update indices
-                    }
-                    // No fallback. If no history, state remains stale/empty.
-                });
-
-                // Batch update indices
-                setPlaybackIndex(prevIndices => {
-                    const newIndices = { ...prevIndices };
-                    selectedProducts.forEach(pid => {
-                        const list = historyCache[pid];
-                        if (list && list.length > 0) {
-                            const idx = prevIndices[pid] || 0;
-                            newIndices[pid] = (idx + 1) % list.length;
-                        }
-                    });
-                    return newIndices;
-                });
-
-                setHistory(h => {
-                    const newHistory = [...h, historyPoint];
-                    return newHistory.length > 50 ? newHistory.slice(newHistory.length - 50) : newHistory;
-                });
-
-                return nextState;
-            });
-        } else {
-            // Single-Product Playback
-            const currentPid = selectedProducts.length === 1 ? selectedProducts[0] : null;
-            // Note: For initial state (no selection), we might want to default to something or just fluctuate.
-            // If we have a product selected, playback.
-
-            if (currentPid && historyCache[currentPid]) {
+        if (selectedProducts.length === 1) {
+            // Single-Product LIVE Playback
+            const currentPid = selectedProducts[0];
+            if (historyCache[currentPid]) {
                 const list = historyCache[currentPid];
                 if (list.length > 0) {
-                    setPlaybackIndex(indices => {
-                        const idx = indices[currentPid] || 0;
+                    setPlaybackIndex(idx => {
                         const nextIdx = (idx + 1) % list.length;
-
                         const point = list[nextIdx];
-                        // Update Data
                         setData(prev => ({ ...prev, ...point }));
-
-                        return { ...indices, [currentPid]: nextIdx };
+                        return nextIdx;
                     });
                 }
             }
-            // Strictly NO random fluctuation if no product selected or history not loaded
         }
+        // For multi-product: history is static, no simulation loop needed
     }, [selectedProducts, historyCache]);
 
     useEffect(() => {
@@ -187,24 +137,68 @@ export const useSensorSimulation = () => {
         return () => clearInterval(interval);
     }, [isRunning, simulateStep]);
 
+    // Load history data for selected products
     useEffect(() => {
-        selectedProducts.forEach(pid => {
-            if (!historyCache[pid]) {
-                fetch(`http://localhost:8000/product/${pid}`)
-                    .then(res => {
-                        if (!res.ok) throw new Error("Failed");
-                        return res.json();
-                    })
-                    .then(data => {
-                        if (Array.isArray(data)) {
-                            setHistoryCache(prev => ({ ...prev, [pid]: data }));
-                            // Initialize index if not set
-                            setPlaybackIndex(prev => ({ ...prev, [pid]: prev[pid] || 0 }));
-                        }
-                    })
-                    .catch(e => console.error("History fetch failed", e));
+        const loadHistoriesForProducts = async () => {
+            const pendingLoads = [];
+            selectedProducts.forEach(pid => {
+                if (!historyCache[pid]) {
+                    pendingLoads.push(
+                        fetch(`http://localhost:8000/product/${pid}`)
+                            .then(res => {
+                                if (!res.ok) throw new Error("Failed");
+                                return res.json();
+                            })
+                            .then(data => ({ pid, data }))
+                            .catch(e => {
+                                console.error("History fetch failed", e);
+                                return null;
+                            })
+                    );
+                }
+            });
+
+            if (pendingLoads.length > 0) {
+                const results = await Promise.all(pendingLoads);
+                results.forEach(result => {
+                    if (result && Array.isArray(result.data)) {
+                        setHistoryCache(prev => ({ ...prev, [result.pid]: result.data }));
+                    }
+                });
             }
-        });
+
+            // Reset playback index for single-product mode
+            setPlaybackIndex(0);
+        };
+
+        loadHistoriesForProducts();
+    }, [selectedProducts]);
+
+    // Compile static multi-product history for graph display
+    useEffect(() => {
+        if (selectedProducts.length > 1 && Object.keys(historyCache).length > 0) {
+            // Compile all product histories into one big history array for TrendGraph
+            const compiled = [];
+            
+            // Get max length to know how many data points we're working with
+            const maxLen = Math.max(...selectedProducts.map(pid => historyCache[pid]?.length || 0));
+            
+            // Build compiled history: each point includes data from all selected products
+            for (let i = 0; i < maxLen; i++) {
+                const point = { timestamp: `${i}` };
+                selectedProducts.forEach(pid => {
+                    const productData = historyCache[pid];
+                    if (productData && productData[i]) {
+                        point[`Product ${pid}`] = productData[i].risk || 0;
+                    }
+                });
+                compiled.push(point);
+            }
+            
+            setStaticMultiHistory(compiled);
+        } else {
+            setStaticMultiHistory([]);
+        }
     }, [selectedProducts, historyCache]);
 
 
@@ -215,10 +209,13 @@ export const useSensorSimulation = () => {
             return;
         }
         try {
+            // For multi-product mode, always fetch complete fleet dataset
+            const idsToFetch = productIds.length > 1 ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : productIds;
+            
             const response = await fetch('http://localhost:8000/fleet/status', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ product_ids: productIds })
+                body: JSON.stringify({ product_ids: idsToFetch })
             });
             if (response.ok) {
                 const data = await response.json();
@@ -269,7 +266,7 @@ export const useSensorSimulation = () => {
 
                     // Update Cache
                     setHistoryCache(prev => ({ ...prev, [pid]: historyData }));
-                    setPlaybackIndex(prev => ({ ...prev, [pid]: 0 }));
+                    setPlaybackIndex(0);
 
                     setData(prev => ({
                         ...prev,
@@ -292,9 +289,12 @@ export const useSensorSimulation = () => {
 
     const toggleSimulation = () => setIsRunning(prev => !prev);
 
+    // Determine which history to display: static multi-product or single-product live
+    const displayHistory = selectedProducts.length > 1 ? staticMultiHistory : history;
+
     return {
         data,
-        history,
+        history: displayHistory,
         riskAnalysis,
         isRunning,
         toggleSimulation,
