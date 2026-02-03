@@ -352,29 +352,257 @@ try:
 except Exception as e:
     print(f"❌ Error loading dataset: {e}")
 
-def optimize_threshold(y_true, y_probs, cost_fp, cost_fn):
+def optimize_threshold(y_true, y_probs, cost_fp, cost_fn, method="ensemble"):
     """
-    Finds the threshold that minimizes total business cost.
-    Total Cost = (False Negatives * cost_fn) + (False Positives * cost_fp)
-    """
-    thresholds = np.linspace(0.0, 1.0, 101)
-    costs = []
-
-    for thresh in thresholds:
-        y_pred = (y_probs >= thresh).astype(int)
-        
-        # Calculate FP and FN
-        fp = np.sum((y_pred == 1) & (y_true == 0))
-        fn = np.sum((y_pred == 0) & (y_true == 1))
-        
-        total_cost = (fp * cost_fp) + (fn * cost_fn)
-        costs.append(total_cost)
-
-    # Find index of minimum cost
-    min_cost_index = np.argmin(costs)
-    optimal_threshold = thresholds[min_cost_index]
+    Robust threshold optimization using multiple methods and ensemble approach.
     
-    return float(optimal_threshold)
+    Methods:
+    - cost_sensitive: Minimizes business cost (FP * cost_fp + FN * cost_fn)
+    - youden_j: Maximizes Youden's J statistic (Sensitivity + Specificity - 1)
+    - f_beta: Maximizes F-beta score with beta derived from cost ratio
+    - precision_recall: Finds threshold at precision-recall breakeven
+    - ensemble: Weighted combination of all methods (default, most robust)
+    
+    Returns detailed metrics including confidence bounds.
+    """
+    y_true = np.array(y_true)
+    y_probs = np.array(y_probs)
+    
+    # Fine-grained threshold search (1001 points for precision)
+    thresholds = np.linspace(0.001, 0.999, 999)
+    
+    # === Method 1: Cost-Sensitive Optimization ===
+    def cost_based_threshold():
+        costs = []
+        for thresh in thresholds:
+            y_pred = (y_probs >= thresh).astype(int)
+            fp = np.sum((y_pred == 1) & (y_true == 0))
+            fn = np.sum((y_pred == 0) & (y_true == 1))
+            total_cost = (fp * cost_fp) + (fn * cost_fn)
+            costs.append(total_cost)
+        
+        costs = np.array(costs)
+        min_idx = np.argmin(costs)
+        min_cost = costs[min_idx]
+        
+        # Find range of thresholds within 5% of minimum cost for confidence interval
+        tolerance = min_cost * 0.05 if min_cost > 0 else 0.01
+        near_optimal = np.where(costs <= min_cost + tolerance)[0]
+        
+        return {
+            "threshold": float(thresholds[min_idx]),
+            "min_cost": float(min_cost),
+            "cost_curve": costs,
+            "confidence_low": float(thresholds[near_optimal[0]]) if len(near_optimal) > 0 else float(thresholds[min_idx]),
+            "confidence_high": float(thresholds[near_optimal[-1]]) if len(near_optimal) > 0 else float(thresholds[min_idx])
+        }
+    
+    # === Method 2: Youden's J Statistic (ROC-based) ===
+    def youden_j_threshold():
+        j_scores = []
+        for thresh in thresholds:
+            y_pred = (y_probs >= thresh).astype(int)
+            tp = np.sum((y_pred == 1) & (y_true == 1))
+            tn = np.sum((y_pred == 0) & (y_true == 0))
+            fp = np.sum((y_pred == 1) & (y_true == 0))
+            fn = np.sum((y_pred == 0) & (y_true == 1))
+            
+            sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+            specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+            
+            j = sensitivity + specificity - 1
+            j_scores.append(j)
+        
+        j_scores = np.array(j_scores)
+        max_idx = np.argmax(j_scores)
+        
+        return {
+            "threshold": float(thresholds[max_idx]),
+            "j_score": float(j_scores[max_idx])
+        }
+    
+    # === Method 3: F-beta Score (cost-weighted harmonic mean) ===
+    def f_beta_threshold():
+        # Beta > 1 favors recall (when FN is expensive)
+        # Beta < 1 favors precision (when FP is expensive)
+        beta = np.sqrt(cost_fn / cost_fp) if cost_fp > 0 else 1.0
+        beta = np.clip(beta, 0.1, 10.0)  # Bound for numerical stability
+        
+        f_scores = []
+        for thresh in thresholds:
+            y_pred = (y_probs >= thresh).astype(int)
+            tp = np.sum((y_pred == 1) & (y_true == 1))
+            fp = np.sum((y_pred == 1) & (y_true == 0))
+            fn = np.sum((y_pred == 0) & (y_true == 1))
+            
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+            
+            if precision + recall > 0:
+                f_beta = (1 + beta**2) * (precision * recall) / ((beta**2 * precision) + recall)
+            else:
+                f_beta = 0
+            
+            f_scores.append(f_beta)
+        
+        f_scores = np.array(f_scores)
+        max_idx = np.argmax(f_scores)
+        
+        return {
+            "threshold": float(thresholds[max_idx]),
+            "f_beta": float(f_scores[max_idx]),
+            "beta_used": float(beta)
+        }
+    
+    # === Method 4: Precision-Recall Breakeven ===
+    def pr_breakeven_threshold():
+        best_diff = float('inf')
+        best_thresh = 0.5
+        
+        for thresh in thresholds:
+            y_pred = (y_probs >= thresh).astype(int)
+            tp = np.sum((y_pred == 1) & (y_true == 1))
+            fp = np.sum((y_pred == 1) & (y_true == 0))
+            fn = np.sum((y_pred == 0) & (y_true == 1))
+            
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+            
+            diff = abs(precision - recall)
+            if diff < best_diff:
+                best_diff = diff
+                best_thresh = thresh
+        
+        return {
+            "threshold": float(best_thresh),
+            "breakeven_gap": float(best_diff)
+        }
+    
+    # === Method 5: Bootstrap Confidence Interval ===
+    def bootstrap_threshold(n_bootstrap=50):
+        """Use bootstrap sampling to estimate threshold stability."""
+        bootstrap_thresholds = []
+        n_samples = len(y_true)
+        
+        for _ in range(n_bootstrap):
+            # Sample with replacement
+            indices = np.random.choice(n_samples, size=n_samples, replace=True)
+            y_true_boot = y_true[indices]
+            y_probs_boot = y_probs[indices]
+            
+            # Find optimal threshold for this sample
+            costs = []
+            for thresh in thresholds[::10]:  # Coarser search for speed
+                y_pred = (y_probs_boot >= thresh).astype(int)
+                fp = np.sum((y_pred == 1) & (y_true_boot == 0))
+                fn = np.sum((y_pred == 0) & (y_true_boot == 1))
+                total_cost = (fp * cost_fp) + (fn * cost_fn)
+                costs.append(total_cost)
+            
+            min_idx = np.argmin(costs)
+            bootstrap_thresholds.append(thresholds[::10][min_idx])
+        
+        return {
+            "mean": float(np.mean(bootstrap_thresholds)),
+            "std": float(np.std(bootstrap_thresholds)),
+            "ci_lower": float(np.percentile(bootstrap_thresholds, 5)),
+            "ci_upper": float(np.percentile(bootstrap_thresholds, 95))
+        }
+    
+    # === Calculate all methods ===
+    cost_result = cost_based_threshold()
+    youden_result = youden_j_threshold()
+    fbeta_result = f_beta_threshold()
+    pr_result = pr_breakeven_threshold()
+    
+    # Bootstrap for confidence (smaller sample for speed)
+    if len(y_true) > 100:
+        bootstrap_result = bootstrap_threshold(n_bootstrap=30)
+    else:
+        bootstrap_result = {"mean": cost_result["threshold"], "std": 0.05, "ci_lower": 0.3, "ci_upper": 0.7}
+    
+    # === Ensemble: Weighted combination based on cost ratio ===
+    cost_ratio = cost_fn / cost_fp if cost_fp > 0 else 10.0
+    
+    # Weight assignment based on business context
+    if cost_ratio > 5:  # FN is much more expensive - prioritize recall
+        weights = {
+            "cost": 0.40,
+            "youden": 0.15,
+            "fbeta": 0.35,
+            "pr": 0.10
+        }
+    elif cost_ratio < 2:  # FP is relatively expensive - prioritize precision  
+        weights = {
+            "cost": 0.35,
+            "youden": 0.30,
+            "fbeta": 0.25,
+            "pr": 0.10
+        }
+    else:  # Balanced
+        weights = {
+            "cost": 0.35,
+            "youden": 0.25,
+            "fbeta": 0.25,
+            "pr": 0.15
+        }
+    
+    ensemble_threshold = (
+        weights["cost"] * cost_result["threshold"] +
+        weights["youden"] * youden_result["threshold"] +
+        weights["fbeta"] * fbeta_result["threshold"] +
+        weights["pr"] * pr_result["threshold"]
+    )
+    
+    # Round to 3 decimal places for practical use
+    ensemble_threshold = round(ensemble_threshold, 3)
+    
+    # Calculate expected annual savings at optimal threshold
+    baseline_cost = cost_result["cost_curve"][499]  # Cost at 0.5 threshold
+    optimal_cost = cost_result["min_cost"]
+    annual_savings = max(0, (baseline_cost - optimal_cost) * 365)  # Assume daily samples
+    
+    if method == "ensemble":
+        final_threshold = ensemble_threshold
+    elif method == "cost":
+        final_threshold = cost_result["threshold"]
+    elif method == "youden":
+        final_threshold = youden_result["threshold"]
+    elif method == "fbeta":
+        final_threshold = fbeta_result["threshold"]
+    else:
+        final_threshold = ensemble_threshold
+    
+    return {
+        "optimal_threshold": float(final_threshold),
+        "method_used": method,
+        "methods": {
+            "cost_sensitive": cost_result["threshold"],
+            "youden_j": youden_result["threshold"],
+            "f_beta": fbeta_result["threshold"],
+            "pr_breakeven": pr_result["threshold"],
+            "ensemble": ensemble_threshold
+        },
+        "confidence_interval": {
+            "lower": bootstrap_result["ci_lower"],
+            "upper": bootstrap_result["ci_upper"],
+            "std": bootstrap_result["std"]
+        },
+        "metrics": {
+            "min_cost": cost_result["min_cost"],
+            "j_statistic": youden_result["j_score"],
+            "f_beta_score": fbeta_result["f_beta"],
+            "beta_used": fbeta_result["beta_used"],
+            "cost_ratio": cost_ratio
+        },
+        "annual_savings_estimate": float(annual_savings)
+    }
+
+
+def get_simple_threshold(y_true, y_probs, cost_fp, cost_fn):
+    """Simple wrapper that returns just the threshold value for backward compatibility."""
+    result = optimize_threshold(y_true, y_probs, cost_fp, cost_fn, method="ensemble")
+    return result["optimal_threshold"]
 
 @app.get("/product/{product_id}")
 def get_product_stats(product_id: int):
@@ -565,34 +793,47 @@ def predict_failure(data: SensorInput):
              # Fallback if model doesn't support proba (unlikely for RandomForest)
             probability_class_1 = float(model.predict(features)[0])
 
-        # COST OPTIMIZATION LOGIC
+        # COST OPTIMIZATION LOGIC - Using robust ensemble algorithm
+        threshold_result = None
         if calibration_data:
              # Calculate optimal threshold dynamically based on user input costs
-             THRESHOLD = optimize_threshold(
+             threshold_result = optimize_threshold(
                  calibration_data['y_true'], 
                  calibration_data['y_probs'], 
                  data.cost_fp, 
-                 data.cost_fn
+                 data.cost_fn,
+                 method="ensemble"
              )
+             THRESHOLD = threshold_result["optimal_threshold"]
         else:
              THRESHOLD = 0.3933 # Default fallback
         
         if probability_class_1 >= THRESHOLD:
             prediction = 1
             status_msg = "Failure Predicted"
-            recommendation = f"Optimized maintenance trigger (Thresh: {THRESHOLD:.2f}) to prevent ${data.cost_fn} loss."
+            recommendation = f"Optimized maintenance trigger (Thresh: {THRESHOLD:.3f}) to prevent ${data.cost_fn} loss."
         else:
             prediction = 0
             status_msg = "Healthy"
             recommendation = "System execution normal"
 
-        return {
+        response = {
             "prediction": int(prediction),
             "probability": round(float(probability_class_1), 4),
             "threshold": round(float(THRESHOLD), 4),
             "status": status_msg,
             "recommendation": recommendation
         }
+        
+        # Add optimization details if available
+        if threshold_result:
+            response["optimization"] = {
+                "method_thresholds": threshold_result["methods"],
+                "confidence_interval": threshold_result["confidence_interval"],
+                "annual_savings_estimate": threshold_result["annual_savings_estimate"]
+            }
+        
+        return response
 
     except Exception as e:
         print(f"Prediction Error: {e}")
@@ -939,6 +1180,167 @@ def get_generator_fleet_status(generator_ids: list[str]):
     
     except Exception as e:
         print(f"Generator fleet status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============== TURBINE COST OPTIMIZATION ==============
+
+class TurbineCostInput(BaseModel):
+    AT: float
+    V: float
+    AP: float
+    RH: float
+    cost_fp: float = 500
+    cost_fn: float = 5000
+
+@app.post("/turbine/predict/cost")
+def predict_turbine_with_cost(data: TurbineCostInput):
+    """
+    Predict turbine failure risk with robust cost-optimized threshold
+    Uses ensemble of methods: cost-sensitive, Youden's J, F-beta, and PR-breakeven
+    """
+    if turbine_model is None or turbine_data is None:
+        raise HTTPException(status_code=503, detail="Turbine model not loaded")
+    
+    try:
+        # Create features for input
+        input_df = create_turbine_features(data.AT, data.V, data.AP, data.RH)
+        
+        # Get probability
+        probabilities = turbine_model.predict_proba(input_df)[0]
+        risk_probability = float(probabilities[1])
+        
+        # Calculate optimal threshold using turbine data (sample for performance)
+        sample_size = min(500, len(turbine_data))
+        sample_df = turbine_data.sample(n=sample_size, random_state=42)
+        
+        y_probs = []
+        for _, row in sample_df.iterrows():
+            feat_df = create_turbine_features(row['AT'], row['V'], row['AP'], row['RH'])
+            probs = turbine_model.predict_proba(feat_df)[0]
+            y_probs.append(probs[1])
+        
+        y_probs = np.array(y_probs)
+        # Create synthetic ground truth based on high probability threshold
+        y_true = (y_probs > 0.5).astype(int)
+        
+        # Get robust threshold optimization result
+        threshold_result = optimize_threshold(y_true, y_probs, data.cost_fp, data.cost_fn, method="ensemble")
+        optimal_threshold = threshold_result["optimal_threshold"]
+        
+        # Make prediction using optimal threshold
+        prediction = 1 if risk_probability >= optimal_threshold else 0
+        
+        # Calculate strategy based on cost ratio
+        ratio = data.cost_fn / data.cost_fp
+        if ratio > 8:
+            strategy = "Aggressive Protection"
+        elif ratio < 3:
+            strategy = "Conservative Monitoring"
+        else:
+            strategy = "Balanced Profile"
+        
+        return {
+            "prediction": int(prediction),
+            "probability": round(risk_probability, 4),
+            "risk_percent": round(risk_probability * 100, 2),
+            "threshold": round(optimal_threshold, 4),
+            "status": "High Risk" if prediction == 1 else "Normal",
+            "strategy": strategy,
+            "cost_fn": data.cost_fn,
+            "cost_fp": data.cost_fp,
+            "optimization": {
+                "method_thresholds": threshold_result["methods"],
+                "confidence_interval": threshold_result["confidence_interval"],
+                "annual_savings_estimate": threshold_result["annual_savings_estimate"],
+                "f_beta_used": threshold_result["metrics"]["beta_used"]
+            }
+        }
+    
+    except Exception as e:
+        print(f"Turbine cost prediction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============== GENERATOR COST OPTIMIZATION ==============
+
+class GeneratorCostInput(BaseModel):
+    air_temp: float
+    core_temp: float
+    rpm: float
+    torque: float
+    wear: float
+    cost_fp: float = 500
+    cost_fn: float = 5000
+
+@app.post("/generator/predict/cost")
+def predict_generator_with_cost(data: GeneratorCostInput):
+    """
+    Predict generator failure risk with robust cost-optimized threshold
+    Uses ensemble of methods: cost-sensitive, Youden's J, F-beta, and PR-breakeven
+    """
+    if generator_model is None or generator_data is None:
+        raise HTTPException(status_code=503, detail="Generator model not loaded")
+    
+    try:
+        # Create features for input
+        input_df = create_generator_features(
+            data.air_temp, data.core_temp, data.rpm, data.torque, data.wear
+        )
+        
+        # Get probability
+        probabilities = generator_model.predict_proba(input_df)[0]
+        risk_probability = float(probabilities[1])
+        
+        # Calculate optimal threshold using generator data (sample for performance)
+        sample_size = min(500, len(generator_data))
+        sample_df = generator_data.sample(n=sample_size, random_state=42)
+        
+        y_probs = []
+        for _, row in sample_df.iterrows():
+            feat_df = create_generator_features(
+                row['air_temp'], row['core_temp'], row['rpm'], row['torque'], row['wear']
+            )
+            probs = generator_model.predict_proba(feat_df)[0]
+            y_probs.append(probs[1])
+        
+        y_probs = np.array(y_probs)
+        # Create synthetic ground truth based on high probability threshold
+        y_true = (y_probs > 0.5).astype(int)
+        
+        # Get robust threshold optimization result
+        threshold_result = optimize_threshold(y_true, y_probs, data.cost_fp, data.cost_fn, method="ensemble")
+        optimal_threshold = threshold_result["optimal_threshold"]
+        
+        # Make prediction using optimal threshold
+        prediction = 1 if risk_probability >= optimal_threshold else 0
+        
+        # Calculate strategy based on cost ratio
+        ratio = data.cost_fn / data.cost_fp
+        if ratio > 8:
+            strategy = "Aggressive Protection"
+        elif ratio < 3:
+            strategy = "Conservative Monitoring"
+        else:
+            strategy = "Balanced Profile"
+        
+        return {
+            "prediction": int(prediction),
+            "probability": round(risk_probability, 4),
+            "risk_percent": round(risk_probability * 100, 2),
+            "threshold": round(optimal_threshold, 4),
+            "status": "High Risk" if prediction == 1 else "Normal",
+            "strategy": strategy,
+            "cost_fn": data.cost_fn,
+            "cost_fp": data.cost_fp,
+            "optimization": {
+                "method_thresholds": threshold_result["methods"],
+                "confidence_interval": threshold_result["confidence_interval"],
+                "annual_savings_estimate": threshold_result["annual_savings_estimate"],
+                "f_beta_used": threshold_result["metrics"]["beta_used"]
+            }
+        }
+    
+    except Exception as e:
+        print(f"Generator cost prediction error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")

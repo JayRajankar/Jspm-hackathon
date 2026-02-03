@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { initialSensorData, calculateRisk } from '../utils/simulationEngine';
 
+const API_BASE = 'http://localhost:8000';
+
 export const useSensorSimulation = () => {
-    const [data, setData] = useState(initialSensorData);
+    const [data, setData] = useState({ ...initialSensorData, cost_fn: 5000, cost_fp: 500 });
     const [history, setHistory] = useState([]);
     const [multiHistory, setMultiHistory] = useState([]); // Live history for multi-product
     const [isRunning, setIsRunning] = useState(false);
-    const [riskAnalysis, setRiskAnalysis] = useState(calculateRisk(initialSensorData));
+    const [riskAnalysis, setRiskAnalysis] = useState({ ...calculateRisk(initialSensorData), threshold: 0.5, isOptimizing: false });
     const [logs, setLogs] = useState([]);
     const [selectedProducts, setSelectedProducts] = useState([]);
     const [fleetData, setFleetData] = useState([]);
@@ -17,6 +19,9 @@ export const useSensorSimulation = () => {
     
     // Suppression counter for each product (sneaky risk suppression)
     const suppressionCounterRef = useRef({}); // { pid: counter }
+    
+    // Debounce timer ref for cost updates
+    const costDebounceRef = useRef(null);
     
     // Use ref to access latest historyCache in simulateStep without stale closure
     const historyCacheRef = useRef(historyCache);
@@ -388,6 +393,66 @@ export const useSensorSimulation = () => {
 
     const toggleSimulation = () => setIsRunning(prev => !prev);
 
+    // Update cost and recalculate optimal threshold with debouncing
+    const updateCost = useCallback((field, value) => {
+        // Update data state immediately for responsive UI
+        setData(prev => ({ ...prev, [field]: value }));
+        
+        // Show optimizing state
+        setRiskAnalysis(prev => ({ ...prev, isOptimizing: true }));
+        
+        // Clear previous debounce timer
+        if (costDebounceRef.current) {
+            clearTimeout(costDebounceRef.current);
+        }
+        
+        // Debounce the API call (300ms delay)
+        costDebounceRef.current = setTimeout(() => {
+            setData(currentData => {
+                const updated = { ...currentData, [field]: value };
+                
+                // Fetch optimal threshold with new costs
+                fetch(`${API_BASE}/predict`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        Type: "M",
+                        air_temp: updated.airTemp || 300,
+                        proc_temp: updated.processTemp || 308,
+                        rpm: Math.round(updated.rpm || 1500),
+                        torque: updated.torque || 40,
+                        tool_wear: Math.round(updated.toolWear || 0),
+                        cost_fn: updated.cost_fn,
+                        cost_fp: updated.cost_fp
+                    })
+                })
+                .then(response => response.json())
+                .then(result => {
+                    setRiskAnalysis(prev => ({
+                        ...prev,
+                        threshold: result.threshold,
+                        optimization: result.optimization,
+                        isOptimizing: false
+                    }));
+                    
+                    // Add log entry for threshold update
+                    setLogs(prev => [{
+                        id: Date.now(),
+                        message: `Threshold optimized: ${result.threshold?.toFixed(4)}`,
+                        type: 'info',
+                        time: Date.now()
+                    }, ...prev].slice(0, 50));
+                })
+                .catch(error => {
+                    console.error('Failed to update threshold:', error);
+                    setRiskAnalysis(prev => ({ ...prev, isOptimizing: false }));
+                });
+                
+                return updated;
+            });
+        }, 300);
+    }, []);
+
     return {
         data,
         history,
@@ -396,6 +461,7 @@ export const useSensorSimulation = () => {
         isRunning,
         toggleSimulation,
         updateSensor,
+        updateCost,
         logs,
         selectedProducts,
         fleetData,

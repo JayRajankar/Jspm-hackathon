@@ -44,7 +44,8 @@ const GeneratorDashboard = () => {
         fleetData,
         toggleSimulation,
         resetSimulation,
-        handleGeneratorSelect
+        handleGeneratorSelect,
+        updateCost
     } = useGeneratorSimulation();
 
     // Define generator IDs (1-10)
@@ -160,12 +161,63 @@ const GeneratorDashboard = () => {
                     <div className="xl:col-span-1 space-y-6">
                         <AlertPanel logs={logs} />
 
-                        <div className="h-40">
+                        <div className="h-auto min-h-40">
                             <CostPanel
                                 cost_fn={data.cost_fn}
                                 cost_fp={data.cost_fp}
                                 threshold={riskAnalysis.threshold}
+                                optimization={riskAnalysis.optimization}
+                                isOptimizing={riskAnalysis.isOptimizing}
                             />
+                        </div>
+
+                        {/* Cost Optimization Panel */}
+                        <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-4 backdrop-blur-sm space-y-4">
+                            <h3 className="text-slate-400 text-xs font-medium uppercase tracking-wider">Cost Optimization</h3>
+                            
+                            {/* Cost of Failure (FN) Slider */}
+                            <div className="flex flex-col">
+                                <label className="text-xs text-slate-300 font-semibold mb-2">Cost of Missed Failure (FN)</label>
+                                <input
+                                    type="range"
+                                    min="1000"
+                                    max="10000"
+                                    step="500"
+                                    value={data.cost_fn}
+                                    onChange={(e) => updateCost('cost_fn', parseInt(e.target.value))}
+                                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                />
+                                <div className="flex justify-between text-xs text-slate-500 mt-1">
+                                    <span>$1,000</span>
+                                    <span className="text-purple-400 font-mono">${data.cost_fn.toLocaleString()}</span>
+                                    <span>$10,000</span>
+                                </div>
+                            </div>
+
+                            {/* Cost of False Positive (FP) Slider */}
+                            <div className="flex flex-col">
+                                <label className="text-xs text-slate-300 font-semibold mb-2">Cost of False Positive (FP)</label>
+                                <input
+                                    type="range"
+                                    min="100"
+                                    max="2000"
+                                    step="100"
+                                    value={data.cost_fp}
+                                    onChange={(e) => updateCost('cost_fp', parseInt(e.target.value))}
+                                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                />
+                                <div className="flex justify-between text-xs text-slate-500 mt-1">
+                                    <span>$100</span>
+                                    <span className="text-purple-400 font-mono">${data.cost_fp.toLocaleString()}</span>
+                                    <span>$2,000</span>
+                                </div>
+                            </div>
+
+                            <div className="h-px bg-slate-700/50"></div>
+                            <div className="flex justify-between text-xs">
+                                <span className="text-slate-500">Cost Ratio (FN:FP)</span>
+                                <span className="text-purple-400 font-mono">{(data.cost_fn / data.cost_fp).toFixed(1)}:1</span>
+                            </div>
                         </div>
 
                         {/* Generator Control Panel */}

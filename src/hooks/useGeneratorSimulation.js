@@ -9,12 +9,14 @@ export const useGeneratorSimulation = () => {
         core_temp: 310,
         rpm: 1500,
         torque: 40,
-        wear: 100
+        wear: 100,
+        cost_fn: 5000,
+        cost_fp: 500
     });
     const [history, setHistory] = useState([]);
     const [multiHistory, setMultiHistory] = useState([]);
     const [isRunning, setIsRunning] = useState(false);
-    const [riskAnalysis, setRiskAnalysis] = useState({ risk: 0, status: 'Normal' });
+    const [riskAnalysis, setRiskAnalysis] = useState({ risk: 0, status: 'Normal', threshold: 0.5, isOptimizing: false });
     const [logs, setLogs] = useState([]);
     const [selectedGenerators, setSelectedGenerators] = useState([]);
     const [fleetData, setFleetData] = useState([]);
@@ -25,6 +27,9 @@ export const useGeneratorSimulation = () => {
     
     // Suppression counter
     const suppressionCounterRef = useRef({});
+    
+    // Debounce timer ref
+    const costDebounceRef = useRef(null);
     
     const historyCacheRef = useRef(historyCache);
     useEffect(() => {
@@ -314,6 +319,66 @@ export const useGeneratorSimulation = () => {
         suppressionCounterRef.current = {};
     }, []);
 
+    // Update cost and recalculate optimal threshold with debouncing
+    const updateCost = useCallback((field, value) => {
+        // Update data state immediately for responsive UI
+        setData(prev => ({ ...prev, [field]: value }));
+        
+        // Show optimizing state
+        setRiskAnalysis(prev => ({ ...prev, isOptimizing: true }));
+        
+        // Clear previous debounce timer
+        if (costDebounceRef.current) {
+            clearTimeout(costDebounceRef.current);
+        }
+        
+        // Debounce the API call (300ms delay)
+        costDebounceRef.current = setTimeout(() => {
+            setData(currentData => {
+                const updated = { ...currentData, [field]: value };
+                
+                // Fetch optimal threshold with new costs
+                fetch(`${API_BASE}/generator/predict/cost`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        air_temp: updated.air_temp || 300,
+                        core_temp: updated.core_temp || 310,
+                        rpm: updated.rpm || 1500,
+                        torque: updated.torque || 40,
+                        wear: updated.wear || 100,
+                        cost_fn: updated.cost_fn,
+                        cost_fp: updated.cost_fp
+                    })
+                })
+                .then(response => response.json())
+                .then(result => {
+                    setRiskAnalysis(prev => ({
+                        ...prev,
+                        threshold: result.threshold,
+                        strategy: result.strategy,
+                        optimization: result.optimization,
+                        isOptimizing: false
+                    }));
+                    
+                    // Add log entry for threshold update
+                    setLogs(prev => [{
+                        id: Date.now(),
+                        time: new Date().toLocaleTimeString(),
+                        message: `Threshold optimized: ${result.threshold?.toFixed(4)} (${result.strategy})`,
+                        type: 'info'
+                    }, ...prev].slice(0, 50));
+                })
+                .catch(error => {
+                    console.error('Failed to update threshold:', error);
+                    setRiskAnalysis(prev => ({ ...prev, isOptimizing: false }));
+                });
+                
+                return updated;
+            });
+        }, 300);
+    }, []);
+
     return {
         data,
         history,
@@ -325,6 +390,7 @@ export const useGeneratorSimulation = () => {
         fleetData,
         toggleSimulation,
         resetSimulation,
-        handleGeneratorSelect
+        handleGeneratorSelect,
+        updateCost
     };
 };

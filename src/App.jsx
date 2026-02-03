@@ -22,6 +22,7 @@ function App() {
     isRunning,
     toggleSimulation,
     updateSensor,
+    updateCost,
     logs,
     selectedProducts,
     fleetData,
@@ -110,11 +111,13 @@ function App() {
         <div className="xl:col-span-1 space-y-6">
           <AlertPanel logs={logs} />
 
-          <div className="h-40">
+          <div className="h-auto min-h-40">
             <CostPanel
               cost_fn={data.cost_fn}
               cost_fp={data.cost_fp}
               threshold={riskAnalysis.threshold}
+              optimization={riskAnalysis.optimization}
+              isOptimizing={riskAnalysis.isOptimizing}
             />
           </div>
 
@@ -202,6 +205,7 @@ function App() {
           <Sidebar
             data={data}
             onUpdate={updateSensor}
+            onUpdateCost={updateCost}
             isRunning={isRunning}
             onToggle={toggleSimulation}
             selectedProducts={selectedProducts}

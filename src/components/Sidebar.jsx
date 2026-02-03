@@ -1,7 +1,7 @@
 import React from 'react';
 import { Play, Pause, Settings, RefreshCw } from 'lucide-react';
 
-const Sidebar = ({ data, onUpdate, isRunning, onToggle, selectedProducts = [], onToggleProduct, onSelectAll, onClearAll }) => {
+const Sidebar = ({ data, onUpdate, onUpdateCost, isRunning, onToggle, selectedProducts = [], onToggleProduct, onSelectAll, onClearAll }) => {
     const Slider = ({ label, value, min, max, onChange, unit, step = 1 }) => (
         <div className="mb-6 group">
             <div className="flex justify-between mb-2">
@@ -105,7 +105,7 @@ const Sidebar = ({ data, onUpdate, isRunning, onToggle, selectedProducts = [], o
                     value={data.cost_fn || 5000}
                     min={100} max={50000}
                     unit="$"
-                    onChange={(v) => onUpdate('cost_fn', v)}
+                    onChange={(v) => onUpdateCost('cost_fn', v)}
                 />
 
                 <NumberInput
@@ -113,7 +113,7 @@ const Sidebar = ({ data, onUpdate, isRunning, onToggle, selectedProducts = [], o
                     value={data.cost_fp || 500}
                     min={10} max={5000}
                     unit="$"
-                    onChange={(v) => onUpdate('cost_fp', v)}
+                    onChange={(v) => onUpdateCost('cost_fp', v)}
                 />
 
                 <div className="h-px bg-slate-800 my-6"></div>
