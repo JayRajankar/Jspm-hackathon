@@ -136,11 +136,33 @@ export const useSensorSimulation = () => {
                 const nextIdx = (idx + 1) % productHistory.length;
                 const point = productHistory[nextIdx];
                 
-                // Apply sneaky suppression
+                // Apply sneaky suppression to the historical risk value
                 const displayRisk = applyRiskSuppression(currentPid, point.risk);
                 
-                // Update current data with the playback point (with suppressed risk)
-                setData(prev => ({ ...prev, ...point, risk: displayRisk }));
+                // Update current data with the playback point
+                setData(prev => ({ 
+                    ...prev, 
+                    ...point,
+                    // Keep costs from previous state
+                    cost_fp: prev.cost_fp,
+                    cost_fn: prev.cost_fn
+                }));
+                
+                // Update risk analysis with historical risk (applying suppression)
+                setRiskAnalysis(prev => ({
+                    ...prev,
+                    risk: displayRisk,
+                    label: displayRisk >= 70 ? "High Risk" : displayRisk >= 40 ? "Medium Risk" : "Normal",
+                    reason: displayRisk >= 70 ? "Historical data indicates high failure probability" : 
+                            displayRisk >= 40 ? "Elevated risk detected" : "Operating within normal parameters"
+                }));
+                
+                // Update history with the displayed risk
+                setHistory(h => {
+                    const newPoint = { ...point, risk: displayRisk, timestamp: new Date().toLocaleTimeString() };
+                    const newHistory = [...h, newPoint];
+                    return newHistory.length > 50 ? newHistory.slice(-50) : newHistory;
+                });
                 
                 // Update fleet data for single product too
                 setFleetData(buildLiveFleetData({ [currentPid]: displayRisk }));
@@ -151,8 +173,8 @@ export const useSensorSimulation = () => {
     }, [selectedProducts, buildLiveFleetData, applyRiskSuppression]);
 
     useEffect(() => {
-        // Skip single-mode API prediction if in multi-mode
-        if (selectedProducts.length > 1) return;
+        // Skip prediction entirely if we have selected products (using historical data)
+        if (selectedProducts.length > 0) return;
 
         // Prediction function
         const fetchPrediction = async () => {

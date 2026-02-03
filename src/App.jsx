@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import RadialGauge from './components/Dashboard/RadialGauge';
@@ -26,6 +26,38 @@ function App() {
     selectAllProducts,
     clearAllProducts
   } = useSensorSimulation();
+
+  // Email test state
+  const [emailStatus, setEmailStatus] = useState(null);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+
+  const testEmailAlert = async () => {
+    setIsSendingEmail(true);
+    setEmailStatus(null);
+    try {
+      const response = await fetch('http://localhost:8000/alert/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          product_id: selectedProducts.length > 0 ? `Product_${selectedProducts[0]}` : "Test_Product",
+          risk_value: riskAnalysis.risk || 75,
+          sensor_data: {
+            air_temp: data.airTemp,
+            proc_temp: data.processTemp,
+            rpm: data.rpm,
+            torque: data.torque,
+            tool_wear: data.toolWear
+          }
+        })
+      });
+      const result = await response.json();
+      setEmailStatus({ success: true, message: "Email alert sent!" });
+    } catch (err) {
+      setEmailStatus({ success: false, message: "Failed to send email" });
+    }
+    setIsSendingEmail(false);
+    setTimeout(() => setEmailStatus(null), 3000);
+  };
 
   // Use multiHistory for multi-product, single history for single product
   const graphHistory = selectedProducts.length > 1 ? multiHistory : history;
@@ -131,10 +163,49 @@ function App() {
                   <span>Uptime</span>
                   <span className="text-slate-400">99.98%</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between mb-3">
                   <span>Region</span>
                   <span className="text-slate-400">US-EAST-1</span>
                 </div>
+                
+                {/* Test Email Button */}
+                <button
+                  onClick={testEmailAlert}
+                  disabled={isSendingEmail}
+                  className={`w-full py-2 px-3 rounded-lg font-semibold text-xs transition-all flex items-center justify-center gap-2
+                    ${isSendingEmail 
+                      ? 'bg-slate-700 text-slate-400 cursor-wait' 
+                      : 'bg-gradient-to-r from-orange-500 to-red-500 text-white hover:from-orange-600 hover:to-red-600 shadow-lg hover:shadow-orange-500/25'
+                    }`}
+                >
+                  {isSendingEmail ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                      </svg>
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      Test Email Alert
+                    </>
+                  )}
+                </button>
+                
+                {/* Email Status Message */}
+                {emailStatus && (
+                  <div className={`mt-2 py-1.5 px-2 rounded text-center text-xs font-sans
+                    ${emailStatus.success 
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                      : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                    }`}>
+                    {emailStatus.message}
+                  </div>
+                )}
               </div>
             </div>
           </div>

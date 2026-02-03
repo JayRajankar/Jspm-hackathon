@@ -1,10 +1,22 @@
 import pandas as pd
 import numpy as np
 import joblib
-from fastapi import FastAPI, HTTPException
+import smtplib
+import time
+import urllib.parse
+import urllib.request
+import threading
+from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Initialize FastAPI
 app = FastAPI(title="Predictive Maintenance API", version="1.0")
@@ -58,6 +70,247 @@ EXPECTED_COLUMNS = [
     "Power",
     "Tool_Stress"
 ]
+
+# ============== EMAIL ALERT SYSTEM ==============
+# Email Configuration from environment
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+SENDER_EMAIL = os.getenv("SENDER_EMAIL", "")
+SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "")
+RECEIVER_EMAILS_RAW = os.getenv("RECEIVER_EMAILS", "")
+RECEIVER_EMAILS = [e.strip() for e in RECEIVER_EMAILS_RAW.split(",") if e.strip()]
+ALERT_THRESHOLD = float(os.getenv("ALERT_THRESHOLD", "70"))
+FOLLOWUP_SECONDS = int(os.getenv("FOLLOWUP_SECONDS", "300"))
+
+# Track last alert time per product to avoid spam
+last_alert_time = {}
+ALERT_COOLDOWN_SECONDS = 300  # 5 minutes between alerts per product
+
+def send_threshold_alert(
+    product_id: str,
+    metric_name: str,
+    value: float,
+    threshold: float,
+    sensor_data: dict = None
+):
+    """Send email alert when threshold is exceeded."""
+    if not SENDER_EMAIL or not SENDER_PASSWORD:
+        print("⚠️ Email credentials not configured. Skipping alert.")
+        return False
+    if not RECEIVER_EMAILS:
+        print("⚠️ No receiver emails configured. Skipping alert.")
+        return False
+
+    # Check cooldown
+    current_time = time.time()
+    if product_id in last_alert_time:
+        if current_time - last_alert_time[product_id] < ALERT_COOLDOWN_SECONDS:
+            print(f"⏳ Alert cooldown active for {product_id}. Skipping.")
+            return False
+    
+    last_alert_time[product_id] = current_time
+
+    subject = f"⚠ ALERT: {product_id} - {metric_name} Threshold Exceeded"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Build sensor details HTML if available
+    sensor_html = ""
+    if sensor_data:
+        sensor_html = f"""
+        <tr>
+            <td colspan="2" style="padding:10px 30px;">
+                <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:14px 16px;color:#0369a1;">
+                    <div style="font-weight:600;margin-bottom:8px;">Sensor Readings:</div>
+                    <div style="font-size:13px;">
+                        Air Temp: {sensor_data.get('air_temp', 'N/A')}K | 
+                        Process Temp: {sensor_data.get('proc_temp', 'N/A')}K | 
+                        RPM: {sensor_data.get('rpm', 'N/A')} | 
+                        Torque: {sensor_data.get('torque', 'N/A')} Nm | 
+                        Tool Wear: {sensor_data.get('tool_wear', 'N/A')} min
+                    </div>
+                </div>
+            </td>
+        </tr>
+        """
+    
+    html_body = f"""
+<html>
+    <body style="margin:0;padding:0;background:#f3f5fb;font-family:Segoe UI,Arial,sans-serif;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f5fb;padding:28px 0;">
+            <tr>
+                <td align="center">
+                    <table role="presentation" width="620" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;box-shadow:0 10px 30px rgba(18,23,38,0.12);overflow:hidden;">
+                        <tr>
+                            <td style="background:linear-gradient(135deg,#ff6b6b,#ff8f70);padding:22px 30px;color:#ffffff;">
+                                <div style="font-size:20px;font-weight:700;letter-spacing:0.3px;">🔧 Predictive Maintenance Alert</div>
+                                <div style="font-size:13px;opacity:0.9;">Threshold exceeded • Immediate attention required</div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:26px 30px 10px 30px;color:#1f2937;">
+                                <p style="margin:0 0 14px 0;font-size:16px;line-height:1.5;">
+                                    A critical reading was detected on <strong>{product_id}</strong>. Please schedule maintenance as soon as possible.
+                                </p>
+                                <div style="display:inline-block;background:#fee2e2;color:#b91c1c;font-weight:600;padding:6px 12px;border-radius:999px;font-size:12px;">
+                                    ⚠ Threshold breached
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:10px 30px 24px 30px;">
+                                <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border-spacing:0 8px;">
+                                    <tr>
+                                        <td style="background:#f9fafb;border:1px solid #eef2f7;border-radius:10px;padding:12px 14px;">
+                                            <div style="color:#6b7280;font-size:12px;">Metric</div>
+                                            <div style="font-weight:600;font-size:15px;color:#111827;">{metric_name}</div>
+                                        </td>
+                                        <td style="width:12px;"></td>
+                                        <td style="background:#f9fafb;border:1px solid #eef2f7;border-radius:10px;padding:12px 14px;">
+                                            <div style="color:#6b7280;font-size:12px;">Current Value</div>
+                                            <div style="font-weight:600;font-size:15px;color:#ef4444;">{value:.1f}%</div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="background:#f9fafb;border:1px solid #eef2f7;border-radius:10px;padding:12px 14px;">
+                                            <div style="color:#6b7280;font-size:12px;">Threshold</div>
+                                            <div style="font-weight:600;font-size:15px;color:#111827;">{threshold:.1f}%</div>
+                                        </td>
+                                        <td style="width:12px;"></td>
+                                        <td style="background:#f9fafb;border:1px solid #eef2f7;border-radius:10px;padding:12px 14px;">
+                                            <div style="color:#6b7280;font-size:12px;">Time</div>
+                                            <div style="font-weight:600;font-size:15px;color:#111827;">{timestamp}</div>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                        {sensor_html}
+                        <tr>
+                            <td style="padding:0 30px 24px 30px;">
+                                <div style="padding:14px 16px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;color:#9a3412;">
+                                    <strong>Action Required:</strong> Schedule preventive maintenance immediately to avoid unplanned downtime.
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:16px 30px;background:#f9fafb;color:#9ca3af;font-size:12px;">
+                                This is an automated alert from your Predictive Maintenance System. Please do not reply.
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+</html>
+"""
+
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = SENDER_EMAIL
+        msg["To"] = ", ".join(RECEIVER_EMAILS)
+        msg["Subject"] = subject
+        msg.attach(MIMEText(html_body, "html"))
+
+        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.send_message(msg)
+
+        print(f"✅ Alert email sent for {product_id}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Failed to send alert email: {e}")
+        return False
+
+
+def send_alert_with_followup(product_id: str, metric_name: str, value: float, threshold: float, sensor_data: dict = None):
+    """Send alert and schedule Telegram follow-up call."""
+    email_sent = send_threshold_alert(product_id, metric_name, value, threshold, sensor_data)
+    
+    if email_sent and FOLLOWUP_SECONDS > 0:
+        def followup_call():
+            print(f"⏳ Waiting {FOLLOWUP_SECONDS} seconds before Telegram call...")
+            time.sleep(FOLLOWUP_SECONDS)
+            try:
+                params = {
+                    "source": "web",
+                    "user": "@JayRajankar",
+                    "text": f"Critical alert for {product_id}. Risk level at {value:.1f} percent. Immediate maintenance required.",
+                    "lang": "en-US-Standard-B",
+                }
+                url = "http://api.callmebot.com/start.php?" + urllib.parse.urlencode(params)
+                with urllib.request.urlopen(url, timeout=30) as response:
+                    response.read()
+                print(f"📞 Telegram call initiated for {product_id}")
+            except Exception as e:
+                print(f"❌ Telegram call failed: {e}")
+        
+        # Run followup in background thread
+        threading.Thread(target=followup_call, daemon=True).start()
+
+
+# Alert Request Schema
+class AlertRequest(BaseModel):
+    product_id: str
+    risk_value: float
+    sensor_data: dict = None
+
+
+@app.post("/alert/check")
+async def check_and_alert(req: AlertRequest, background_tasks: BackgroundTasks):
+    """Check if risk exceeds threshold and send alert."""
+    if req.risk_value >= ALERT_THRESHOLD:
+        background_tasks.add_task(
+            send_alert_with_followup,
+            req.product_id,
+            "Failure Risk",
+            req.risk_value,
+            ALERT_THRESHOLD,
+            req.sensor_data
+        )
+        return {
+            "alert_triggered": True,
+            "message": f"Alert triggered for {req.product_id}",
+            "risk": req.risk_value,
+            "threshold": ALERT_THRESHOLD
+        }
+    
+    return {
+        "alert_triggered": False,
+        "message": "Risk within safe limits",
+        "risk": req.risk_value,
+        "threshold": ALERT_THRESHOLD
+    }
+
+
+@app.post("/alert/send")
+async def send_manual_alert(req: AlertRequest, background_tasks: BackgroundTasks):
+    """Manually trigger an alert (for testing)."""
+    background_tasks.add_task(
+        send_alert_with_followup,
+        req.product_id,
+        "Manual Alert",
+        req.risk_value,
+        ALERT_THRESHOLD,
+        req.sensor_data
+    )
+    return {"status": "Alert queued", "product_id": req.product_id}
+
+
+@app.get("/alert/config")
+def get_alert_config():
+    """Get current alert configuration (for debugging)."""
+    return {
+        "email_configured": bool(SENDER_EMAIL and SENDER_PASSWORD),
+        "receivers_count": len(RECEIVER_EMAILS),
+        "threshold": ALERT_THRESHOLD,
+        "followup_seconds": FOLLOWUP_SECONDS,
+        "cooldown_seconds": ALERT_COOLDOWN_SECONDS
+    }
+
+# ============== END EMAIL ALERT SYSTEM ==============
 
 # Load Calibration Data (y_true, y_probs)
 CALIBRATION_PATH = "calibration_data.pkl"
