@@ -9,12 +9,11 @@ const TrendGraph = ({ history, selectedProducts = [] }) => {
     return (
         <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-4 backdrop-blur-sm h-72 shadow-lg" style={{ minWidth: 0, minHeight: 0 }}>
             <h3 className="text-slate-400 text-xs font-medium uppercase tracking-wider mb-4">
-                {isMulti ? `Historical Data Comparison (${selectedProducts.length} Products)` : 'Real-time Risk Trend'}
+                {isMulti ? `Real-time Risk Trends (${selectedProducts.length} Devices)` : 'Real-time Risk Trend'}
             </h3>
             <div className="h-56 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                    {isMulti && history.length > 0 ? (
-                        // Multi-product: Static historical line chart
+                    {isMulti ? (
                         <LineChart data={history} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                             <XAxis dataKey="timestamp" tick={false} axisLine={false} />
@@ -38,7 +37,6 @@ const TrendGraph = ({ history, selectedProducts = [] }) => {
                             ))}
                         </LineChart>
                     ) : (
-                        // Single-product: Live area chart
                         <AreaChart data={history} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                             <defs>
                                 <linearGradient id="colorRisk" x1="0" y1="0" x2="0" y2="1">

@@ -14,6 +14,7 @@ function App() {
   const {
     data,
     history,
+    multiHistory,
     riskAnalysis,
     isRunning,
     toggleSimulation,
@@ -25,6 +26,9 @@ function App() {
     selectAllProducts,
     clearAllProducts
   } = useSensorSimulation();
+
+  // Use multiHistory for multi-product, single history for single product
+  const graphHistory = selectedProducts.length > 1 ? multiHistory : history;
 
 
 
@@ -62,11 +66,11 @@ function App() {
                 // Single product: show gauge + trend graph side by side
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <RadialGauge value={riskAnalysis.risk} label="Failure Probability" />
-                  <TrendGraph history={history} selectedProducts={selectedProducts} />
+                  <TrendGraph history={graphHistory} selectedProducts={selectedProducts} />
                 </div>
               ) : (
-                // Multiple products: expand trend graph to full width
-                <TrendGraph history={history} selectedProducts={selectedProducts} />
+                // Multiple products: expand trend graph to full width (static historical data)
+                <TrendGraph history={graphHistory} selectedProducts={selectedProducts} />
               )}
 
               {/* Fleet Risk Map - Always visible if products selected, or just placeholder */}

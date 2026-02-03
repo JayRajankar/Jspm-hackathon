@@ -226,19 +226,34 @@ def get_fleet_status(req: FleetRequest):
     if subset.empty:
         return []
 
+    # Aggregate by Product ID - calculate average risk probability per product
+    product_risks = subset.groupby('Product ID').agg({
+        'Probability': 'mean'
+    }).reset_index()
+    
+    # Assign risk category based on average probability
+    def get_risk_category(prob):
+        if prob >= 0.7:
+            return "High Risk"
+        elif prob >= 0.3933:
+            return "Medium Risk"
+        else:
+            return "Low Risk"
+    
+    product_risks['Risk_Category'] = product_risks['Probability'].apply(get_risk_category)
+    
     # Format for Recharts TreeMap: [ {name: 'High', children: [...]}, ... ]
     tree_data = []
     
     for category in ["High Risk", "Medium Risk", "Low Risk"]:
-        cat_subset = subset[subset['Risk_Category'] == category]
+        cat_subset = product_risks[product_risks['Risk_Category'] == category]
         if not cat_subset.empty:
             children = []
-            for _, row in cat_subset.head(50).iterrows(): # Limit items per category to avoid UI lag
+            for _, row in cat_subset.iterrows():
                 children.append({
-                    "name": row['UDI'],
-                    "size": float(row['Torque']), # Size by Torque or just 1
-                    "product": row['Product ID'],
-                    "prob": round(float(row['Probability']), 2)
+                    "name": row['Product ID'],
+                    "size": round(float(row['Probability']) * 100, 1),  # Size by risk percentage
+                    "prob": round(float(row['Probability']) * 100, 1)   # Risk probability as percentage
                 })
             
             tree_data.append({

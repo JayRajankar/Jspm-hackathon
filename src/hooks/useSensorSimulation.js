@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { initialSensorData, calculateRisk } from '../utils/simulationEngine';
 
 export const useSensorSimulation = () => {
     const [data, setData] = useState(initialSensorData);
     const [history, setHistory] = useState([]);
+    const [multiHistory, setMultiHistory] = useState([]); // Live history for multi-product
     const [isRunning, setIsRunning] = useState(false);
     const [riskAnalysis, setRiskAnalysis] = useState(calculateRisk(initialSensorData));
     const [logs, setLogs] = useState([]);
@@ -12,28 +13,114 @@ export const useSensorSimulation = () => {
 
     // History Playback State
     const [historyCache, setHistoryCache] = useState({}); // { pid: [dataPoints] }
-    const [playbackIndex, setPlaybackIndex] = useState(0); // Current index for single-product playback
-    const [staticMultiHistory, setStaticMultiHistory] = useState([]); // Pre-compiled all-product history (static)
+    const [playbackIndex, setPlaybackIndex] = useState({}); // { pid: currentIndex }
+    
+    // Use ref to access latest historyCache in simulateStep without stale closure
+    const historyCacheRef = useRef(historyCache);
+    useEffect(() => {
+        historyCacheRef.current = historyCache;
+    }, [historyCache]);
 
-    // Simulation Loop (Single-Product Live Playback OR static multi-product display)
-    const simulateStep = useCallback(() => {
-        if (selectedProducts.length === 1) {
-            // Single-Product LIVE Playback
-            const currentPid = selectedProducts[0];
-            if (historyCache[currentPid]) {
-                const list = historyCache[currentPid];
-                if (list.length > 0) {
-                    setPlaybackIndex(idx => {
-                        const nextIdx = (idx + 1) % list.length;
-                        const point = list[nextIdx];
-                        setData(prev => ({ ...prev, ...point }));
-                        return nextIdx;
-                    });
-                }
+    // Helper function to build live treemap data from current risk values
+    const buildLiveFleetData = useCallback((productRisks) => {
+        // productRisks: { pid: riskValue }
+        const getRiskCategory = (risk) => {
+            if (risk >= 70) return "High Risk";
+            if (risk >= 40) return "Medium Risk";
+            return "Low Risk";
+        };
+
+        const categories = {
+            "High Risk": [],
+            "Medium Risk": [],
+            "Low Risk": []
+        };
+
+        Object.entries(productRisks).forEach(([pid, risk]) => {
+            const category = getRiskCategory(risk);
+            categories[category].push({
+                name: `Product_${pid}`,
+                size: Math.max(risk, 5), // Minimum size for visibility
+                prob: Math.round(risk * 10) / 10
+            });
+        });
+
+        // Build tree data structure
+        const treeData = [];
+        ["High Risk", "Medium Risk", "Low Risk"].forEach(category => {
+            if (categories[category].length > 0) {
+                treeData.push({
+                    name: category,
+                    children: categories[category]
+                });
             }
+        });
+
+        return treeData;
+    }, []);
+
+    // Simulation Loop (Live Playback for both single and multi-product)
+    const simulateStep = useCallback(() => {
+        const cache = historyCacheRef.current;
+        const timestamp = new Date().toLocaleTimeString();
+
+        if (selectedProducts.length > 1) {
+            // Multi-Product Live Playback
+            const historyPoint = { timestamp };
+            const currentRisks = {}; // Track current risk for each product
+            
+            setPlaybackIndex(prevIndices => {
+                const newIndices = { ...prevIndices };
+                
+                selectedProducts.forEach(pid => {
+                    const productHistory = cache[pid];
+                    if (productHistory && productHistory.length > 0) {
+                        const idx = prevIndices[pid] || 0;
+                        const nextIdx = (idx + 1) % productHistory.length;
+                        newIndices[pid] = nextIdx;
+                        
+                        const point = productHistory[nextIdx];
+                        historyPoint[`Product ${pid}`] = point.risk;
+                        currentRisks[pid] = point.risk;
+                    }
+                });
+                
+                // Update fleet data with live risk values
+                if (Object.keys(currentRisks).length > 0) {
+                    setFleetData(buildLiveFleetData(currentRisks));
+                }
+                
+                return newIndices;
+            });
+            
+            // Update multi-product history
+            setMultiHistory(prev => {
+                const newHistory = [...prev, historyPoint];
+                return newHistory.length > 50 ? newHistory.slice(-50) : newHistory;
+            });
+            
+        } else if (selectedProducts.length === 1) {
+            // Single-Product Playback
+            const currentPid = selectedProducts[0];
+            const productHistory = cache[currentPid];
+            
+            if (!productHistory || productHistory.length === 0) return;
+            
+            setPlaybackIndex(prevIndices => {
+                const idx = prevIndices[currentPid] || 0;
+                const nextIdx = (idx + 1) % productHistory.length;
+                const point = productHistory[nextIdx];
+                
+                // Update current data with the playback point
+                setData(prev => ({ ...prev, ...point }));
+                
+                // Update fleet data for single product too
+                setFleetData(buildLiveFleetData({ [currentPid]: point.risk }));
+                
+                return { ...prevIndices, [currentPid]: nextIdx };
+            });
         }
-        // For multi-product: history is static, no simulation loop needed
-    }, [selectedProducts, historyCache]);
+    }, [selectedProducts, buildLiveFleetData]);
 
     useEffect(() => {
         // Skip single-mode API prediction if in multi-mode
@@ -131,74 +218,33 @@ export const useSensorSimulation = () => {
     useEffect(() => {
         let interval;
         if (isRunning) {
-            // Playback speed: 1s per data point
-            interval = setInterval(simulateStep, 1000);
+            // Playback speed: 3s per data point (slowed down for realistic visualization)
+            interval = setInterval(simulateStep, 3000);
         }
         return () => clearInterval(interval);
     }, [isRunning, simulateStep]);
 
-    // Load history data for selected products
+    // Load history for selected products (sampled every Nth point for realistic timeline)
+    const SAMPLE_INTERVAL = 3; // Only show every 3rd data point
+    
     useEffect(() => {
-        const loadHistoriesForProducts = async () => {
-            const pendingLoads = [];
-            selectedProducts.forEach(pid => {
-                if (!historyCache[pid]) {
-                    pendingLoads.push(
-                        fetch(`http://localhost:8000/product/${pid}`)
-                            .then(res => {
-                                if (!res.ok) throw new Error("Failed");
-                                return res.json();
-                            })
-                            .then(data => ({ pid, data }))
-                            .catch(e => {
-                                console.error("History fetch failed", e);
-                                return null;
-                            })
-                    );
-                }
-            });
-
-            if (pendingLoads.length > 0) {
-                const results = await Promise.all(pendingLoads);
-                results.forEach(result => {
-                    if (result && Array.isArray(result.data)) {
-                        setHistoryCache(prev => ({ ...prev, [result.pid]: result.data }));
-                    }
-                });
+        selectedProducts.forEach(pid => {
+            if (!historyCache[pid]) {
+                fetch(`http://localhost:8000/product/${pid}`)
+                    .then(res => {
+                        if (!res.ok) throw new Error("Failed");
+                        return res.json();
+                    })
+                    .then(data => {
+                        if (Array.isArray(data)) {
+                            // Sample every Nth point to spread out the timeline
+                            const sampledData = data.filter((_, index) => index % SAMPLE_INTERVAL === 0);
+                            setHistoryCache(prev => ({ ...prev, [pid]: sampledData }));
+                        }
+                    })
+                    .catch(e => console.error("History fetch failed", e));
             }
-
-            // Reset playback index for single-product mode
-            setPlaybackIndex(0);
-        };
-
-        loadHistoriesForProducts();
-    }, [selectedProducts]);
-
-    // Compile static multi-product history for graph display
-    useEffect(() => {
-        if (selectedProducts.length > 1 && Object.keys(historyCache).length > 0) {
-            // Compile all product histories into one big history array for TrendGraph
-            const compiled = [];
-            
-            // Get max length to know how many data points we're working with
-            const maxLen = Math.max(...selectedProducts.map(pid => historyCache[pid]?.length || 0));
-            
-            // Build compiled history: each point includes data from all selected products
-            for (let i = 0; i < maxLen; i++) {
-                const point = { timestamp: `${i}` };
-                selectedProducts.forEach(pid => {
-                    const productData = historyCache[pid];
-                    if (productData && productData[i]) {
-                        point[`Product ${pid}`] = productData[i].risk || 0;
-                    }
-                });
-                compiled.push(point);
-            }
-            
-            setStaticMultiHistory(compiled);
-        } else {
-            setStaticMultiHistory([]);
-        }
+        });
     }, [selectedProducts, historyCache]);
 
 
@@ -209,13 +255,10 @@ export const useSensorSimulation = () => {
             return;
         }
         try {
-            // For multi-product mode, always fetch complete fleet dataset
-            const idsToFetch = productIds.length > 1 ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] : productIds;
-            
             const response = await fetch('http://localhost:8000/fleet/status', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ product_ids: idsToFetch })
+                body: JSON.stringify({ product_ids: productIds })
             });
             if (response.ok) {
                 const data = await response.json();
@@ -234,9 +277,12 @@ export const useSensorSimulation = () => {
         setSelectedProducts(newSelection);
         updateFleetData(newSelection);
 
+        // Start simulation for any product selection
         if (newSelection.length === 1) {
             updateSensor('product_id', newSelection[0]);
         } else if (newSelection.length > 1) {
+            // Clear multi-history when selection changes, start fresh
+            setMultiHistory([]);
             setIsRunning(true);
         }
     };
@@ -245,11 +291,14 @@ export const useSensorSimulation = () => {
         const all = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         setSelectedProducts(all);
         updateFleetData(all);
+        setMultiHistory([]); // Reset history for fresh start
+        setIsRunning(true); // Start live simulation
     };
 
     const clearAllProducts = () => {
         setSelectedProducts([]);
         setFleetData([]);
+        setIsRunning(false);
     };
 
     const updateSensor = async (key, value) => {
@@ -266,7 +315,7 @@ export const useSensorSimulation = () => {
 
                     // Update Cache
                     setHistoryCache(prev => ({ ...prev, [pid]: historyData }));
-                    setPlaybackIndex(0);
+                    setPlaybackIndex(prev => ({ ...prev, [pid]: 0 })); // Reset index for this product
 
                     setData(prev => ({
                         ...prev,
@@ -289,12 +338,10 @@ export const useSensorSimulation = () => {
 
     const toggleSimulation = () => setIsRunning(prev => !prev);
 
-    // Determine which history to display: static multi-product or single-product live
-    const displayHistory = selectedProducts.length > 1 ? staticMultiHistory : history;
-
     return {
         data,
-        history: displayHistory,
+        history,
+        multiHistory, // Live history for multi-product view
         riskAnalysis,
         isRunning,
         toggleSimulation,
