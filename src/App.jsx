@@ -10,9 +10,12 @@ import RiskTreeMap from './components/Dashboard/RiskTreeMap';
 import { useSensorSimulation } from './hooks/useSensorSimulation';
 import TurbineDashboard from './components/TurbineDashboard';
 import GeneratorDashboard from './components/GeneratorDashboard';
+import Login from './components/Login';
+import { useAuth } from './context/AuthContext';
 
 function App() {
   const [activeTab, setActiveTab] = useState('equipment'); // 'equipment', 'turbine', or 'generator'
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
   
   const {
     data,
@@ -65,6 +68,26 @@ function App() {
 
   // Use multiHistory for multi-product, single history for single product
   const graphHistory = selectedProducts.length > 1 ? multiHistory : history;
+
+  // Show loading screen while checking auth
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <svg className="animate-spin h-12 w-12 text-blue-500 mx-auto mb-4" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+          <p className="text-slate-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login if not authenticated
+  if (!isAuthenticated) {
+    return <Login />;
+  }
 
   // Render Equipment Dashboard
   const renderEquipmentDashboard = () => (
@@ -222,7 +245,18 @@ function App() {
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:24px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-10 pointer-events-none"></div>
 
         {/* Tab Navigation */}
-        <div className="relative z-20 flex items-center justify-center pt-6 pb-4 px-4">
+        <div className="relative z-20 flex items-center justify-between pt-6 pb-4 px-4">
+          {/* User Info */}
+          <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-slate-900/50 backdrop-blur-sm border border-slate-700/50 rounded-xl">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-bold text-sm">
+              {user?.name?.charAt(0) || 'U'}
+            </div>
+            <div className="text-sm">
+              <p className="text-white font-medium">{user?.name}</p>
+              <p className="text-slate-500 text-xs capitalize">{user?.role}</p>
+            </div>
+          </div>
+
           <div className="inline-flex bg-gradient-to-b from-slate-900/90 to-slate-900/70 backdrop-blur-xl rounded-2xl p-2 border border-slate-700/60 shadow-2xl shadow-slate-950/50">
             <button
               onClick={() => setActiveTab('equipment')}
@@ -279,6 +313,17 @@ function App() {
               <span className="relative z-10">Generator</span>
             </button>
           </div>
+
+          {/* Logout Button */}
+          <button
+            onClick={logout}
+            className="hidden md:flex items-center gap-2 px-4 py-2 bg-slate-900/50 backdrop-blur-sm border border-slate-700/50 rounded-xl text-slate-400 hover:text-white hover:border-red-500/50 hover:bg-red-500/10 transition-all"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            <span className="text-sm font-medium">Logout</span>
+          </button>
         </div>
 
         {/* Render Active Dashboard */}
