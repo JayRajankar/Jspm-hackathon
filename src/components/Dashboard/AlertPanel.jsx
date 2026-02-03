@@ -21,10 +21,13 @@ const AlertPanel = ({ logs }) => {
     };
 
     return (
-        <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-4 backdrop-blur-sm h-72 flex flex-col shadow-lg">
-            <h3 className="text-slate-400 text-xs font-medium uppercase tracking-wider mb-4 flex items-center justify-between">
-                <span>System Activity Log</span>
-                <span className="bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full text-[10px]">{logs.length}</span>
+        <div className="bg-gradient-to-br from-slate-900/60 to-slate-800/30 border border-slate-700/60 rounded-2xl p-5 backdrop-blur-md h-72 flex flex-col shadow-2xl hover:shadow-orange-500/5 transition-shadow duration-500">
+            <h3 className="text-slate-300 text-sm font-semibold uppercase tracking-widest mb-4 flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                    <span className="w-1.5 h-6 bg-gradient-to-b from-orange-500 to-red-500 rounded-full shadow-lg shadow-orange-500/50"></span>
+                    System Activity Log
+                </span>
+                <span className="bg-gradient-to-r from-slate-800 to-slate-700 text-slate-300 px-3 py-1 rounded-full text-xs font-bold border border-slate-600/50 shadow-inner">{logs.length}</span>
             </h3>
 
             <div className="overflow-y-auto pr-2 space-y-2 flex-1 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">

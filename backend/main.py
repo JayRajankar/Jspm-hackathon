@@ -598,9 +598,190 @@ def predict_failure(data: SensorInput):
         print(f"Prediction Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ============== TURBINE SYSTEM ==============
+
+# Load Turbine Model and Data
+TURBINE_MODEL_PATH = "turbine_model.pkl"
+TURBINE_COLUMNS_PATH = "turbine_model_columns.pkl"
+TURBINE_DATA_PATH = "Turbine_test_data.csv"
+
+try:
+    if os.path.exists(TURBINE_MODEL_PATH) and os.path.exists(TURBINE_COLUMNS_PATH):
+        turbine_model = joblib.load(TURBINE_MODEL_PATH)
+        turbine_columns = joblib.load(TURBINE_COLUMNS_PATH)
+        turbine_data = pd.read_csv(TURBINE_DATA_PATH)
+        print(f"✅ Turbine model loaded. Columns: {turbine_columns}")
+        print(f"✅ Turbine test data loaded. Shape: {turbine_data.shape}")
+    else:
+        print("⚠️ Warning: turbine model files not found.")
+        turbine_model = None
+        turbine_columns = None
+        turbine_data = None
+except Exception as e:
+    print(f"❌ Error loading turbine model: {e}")
+    turbine_model = None
+    turbine_columns = None
+    turbine_data = None
+
+# Turbine Input Schema
+class TurbineInput(BaseModel):
+    AT: float  # Air Temperature
+    V: float   # Voltage
+    AP: float  # Air Pressure
+    RH: float  # Relative Humidity
+
+def create_turbine_features(AT, V, AP, RH):
+    """
+    Create engineered features for turbine model prediction
+    Must match the features used during training
+    """
+    # Create engineered features
+    temp_press_ratio = AT / (AP / 1000)
+    voltage_temp = V * AT
+    humidity_factor = (RH / 100) * V
+    power_est = V * AT * (AP / 1000)
+    
+    # Return DataFrame with all features in correct order
+    features_dict = {
+        'AT': AT,
+        'V': V,
+        'AP': AP,
+        'RH': RH,
+        'Temp_Press_Ratio': temp_press_ratio,
+        'Voltage_Temp': voltage_temp,
+        'Humidity_Factor': humidity_factor,
+        'Power_Est': power_est
+    }
+    
+    return pd.DataFrame([features_dict])
+
+@app.get("/turbine/{turbine_id}")
+def get_turbine_data(turbine_id: str):
+    """
+    Get historical data for a specific turbine with predicted risk
+    """
+    if turbine_data is None or turbine_model is None:
+        raise HTTPException(status_code=503, detail="Turbine system not loaded")
+    
+    try:
+        # Extract turbine number for deterministic sampling
+        turbine_num = int(turbine_id.split('_')[-1]) if '_' in turbine_id else 1
+        start_idx = (turbine_num * 19) % len(turbine_data)
+        
+        # Get a window of data (sample every 3rd point for 100 points total)
+        SAMPLE_INTERVAL = 3
+        sample_indices = range(start_idx, start_idx + (100 * SAMPLE_INTERVAL), SAMPLE_INTERVAL)
+        
+        history = []
+        for idx in sample_indices:
+            actual_idx = idx % len(turbine_data)  # Wrap around
+            row = turbine_data.iloc[actual_idx]
+            
+            # Create features with engineering
+            input_df = create_turbine_features(row['AT'], row['V'], row['AP'], row['RH'])
+            
+            # Predict risk
+            probabilities = turbine_model.predict_proba(input_df)[0]
+            risk = float(probabilities[1] * 100)  # Failure probability percentage
+            
+            history.append({
+                "AT": float(row['AT']),
+                "V": float(row['V']),
+                "AP": float(row['AP']),
+                "RH": float(row['RH']),
+                "risk": risk
+            })
+        
+        return {
+            "turbine_id": turbine_id,
+            "history": history,
+            "total_points": len(history)
+        }
+    
+    except Exception as e:
+        print(f"Turbine data error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/turbine/predict")
+def predict_turbine(data: TurbineInput):
+    """
+    Predict turbine failure risk based on sensor readings
+    """
+    if turbine_model is None:
+        raise HTTPException(status_code=503, detail="Turbine model not loaded")
+    
+    try:
+        # Create features with engineering
+        input_df = create_turbine_features(data.AT, data.V, data.AP, data.RH)
+        
+        # Get prediction and probability
+        prediction = turbine_model.predict(input_df)[0]
+        probabilities = turbine_model.predict_proba(input_df)[0]
+        risk_probability = float(probabilities[1] * 100)
+        
+        return {
+            "prediction": int(prediction),
+            "risk_probability": risk_probability,
+            "status": "High Risk" if prediction == 1 else "Normal",
+            "sensor_data": {
+                "AT": data.AT,
+                "V": data.V,
+                "AP": data.AP,
+                "RH": data.RH
+            }
+        }
+    
+    except Exception as e:
+        print(f"Turbine prediction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/turbine/fleet/status")
+def get_turbine_fleet_status():
+    """
+    Get aggregated risk status for all turbines in the fleet
+    """
+    if turbine_data is None or turbine_model is None:
+        raise HTTPException(status_code=503, detail="Turbine system not loaded")
+    
+    try:
+        fleet_status = []
+        
+        for i in range(1, 11):  # Turbine_1 to Turbine_10
+            turbine_id = f"Turbine_{i}"
+            start_idx = (i * 19) % len(turbine_data)
+            
+            # Get recent window (last 10 points for averaging)
+            indices = [(start_idx + j) % len(turbine_data) for j in range(10)]
+            risks = []
+            
+            for idx in indices:
+                row = turbine_data.iloc[idx]
+                # Create features with engineering
+                input_df = create_turbine_features(row['AT'], row['V'], row['AP'], row['RH'])
+                probabilities = turbine_model.predict_proba(input_df)[0]
+                risks.append(probabilities[1] * 100)
+            
+            avg_risk = float(np.mean(risks))
+            
+            fleet_status.append({
+                "turbine_id": turbine_id,
+                "risk": avg_risk,
+                "name": turbine_id
+            })
+        
+        return {"fleet": fleet_status}
+    
+    except Exception as e:
+        print(f"Fleet status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/")
 def health_check():
-    return {"status": "online", "model_loaded": model is not None}
+    return {
+        "status": "online", 
+        "model_loaded": model is not None,
+        "turbine_model_loaded": turbine_model is not None
+    }
 
 if __name__ == "__main__":
     import uvicorn

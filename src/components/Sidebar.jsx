@@ -3,10 +3,12 @@ import { Play, Pause, Settings, RefreshCw } from 'lucide-react';
 
 const Sidebar = ({ data, onUpdate, isRunning, onToggle, selectedProducts = [], onToggleProduct, onSelectAll, onClearAll }) => {
     const Slider = ({ label, value, min, max, onChange, unit, step = 1 }) => (
-        <div className="mb-6">
+        <div className="mb-6 group">
             <div className="flex justify-between mb-2">
-                <label className="text-sm font-medium text-slate-400">{label}</label>
-                <span className="text-sm text-electric-cyan font-mono">{Number(value).toFixed(1)} <span className="text-slate-600 text-xs">{unit}</span></span>
+                <label className="text-sm font-semibold text-slate-300 group-hover:text-white transition-colors">{label}</label>
+                <span className="text-sm text-electric-cyan font-mono font-bold bg-slate-800/50 px-2 py-0.5 rounded-md border border-slate-700/50">
+                    {Number(value).toFixed(1)} <span className="text-slate-500 text-xs">{unit}</span>
+                </span>
             </div>
             <input
                 type="range"
@@ -15,51 +17,56 @@ const Sidebar = ({ data, onUpdate, isRunning, onToggle, selectedProducts = [], o
                 step={step}
                 value={value}
                 onChange={(e) => onChange(Number(e.target.value))}
-                className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-electric-cyan focus:outline-none focus:ring-2 focus:ring-electric-cyan/50"
+                className="w-full h-2.5 bg-gradient-to-r from-slate-700 to-slate-600 rounded-lg appearance-none cursor-pointer accent-electric-cyan focus:outline-none focus:ring-2 focus:ring-electric-cyan/50 shadow-inner hover:shadow-lg transition-shadow"
             />
         </div>
     );
 
     const NumberInput = ({ label, value, min, max, onChange, unit }) => (
-        <div className="mb-6">
-            <label className="block text-sm font-medium text-slate-400 mb-2">{label} <span className="text-xs text-slate-600">({unit})</span></label>
+        <div className="mb-6 group">
+            <label className="block text-sm font-semibold text-slate-300 mb-2 group-hover:text-white transition-colors">
+                {label} <span className="text-xs text-slate-500">({unit})</span>
+            </label>
             <input
                 type="number"
                 min={min}
                 max={max}
                 value={Math.round(value)}
                 onChange={(e) => onChange(Number(e.target.value))}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-electric-cyan outline-none font-mono transition-shadow shadow-sm"
+                className="w-full bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700/70 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-electric-cyan/50 focus:border-electric-cyan/50 outline-none font-mono transition-all shadow-lg hover:shadow-electric-cyan/10"
             />
         </div>
     );
 
     return (
-        <aside className="w-full lg:w-80 bg-slate-900 border-r border-slate-800 p-6 flex flex-col h-full overflow-y-auto z-20 shadow-xl">
+        <aside className="w-full lg:w-80 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border-r border-slate-800/80 p-6 flex flex-col h-full overflow-y-auto z-20 shadow-2xl">
             <div className="flex items-center gap-3 mb-8 text-white">
-                <div className="p-2 bg-white/5 rounded-lg text-electric-cyan border border-white/10">
-                    <Settings size={20} />
+                <div className="p-2.5 bg-gradient-to-br from-electric-cyan/20 to-blue-500/20 rounded-xl text-electric-cyan border border-electric-cyan/30 shadow-lg shadow-electric-cyan/20">
+                    <Settings size={22} />
                 </div>
                 <div>
-                    <h2 className="font-bold text-lg tracking-wide leading-tight">Control Panel</h2>
-                    <p className="text-xs text-slate-500">Simulation Settings</p>
+                    <h2 className="font-bold text-lg tracking-wide leading-tight bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">Control Panel</h2>
+                    <p className="text-xs text-slate-500 font-medium">Simulation Settings</p>
                 </div>
             </div>
 
             <div className="mb-8">
                 <button
                     onClick={onToggle}
-                    className={`w-full py-3 px-4 rounded-xl flex items-center justify-center gap-2 font-bold transition-all shadow-lg active:scale-95 ${isRunning
-                        ? 'bg-red-500/10 text-red-500 border border-red-500/50 hover:bg-red-500/20'
-                        : 'bg-electric-cyan/10 text-electric-cyan border border-electric-cyan/50 hover:bg-electric-cyan/20'
+                    className={`w-full py-3.5 px-4 rounded-xl flex items-center justify-center gap-3 font-bold transition-all shadow-xl active:scale-95 border-2 ${isRunning
+                        ? 'bg-gradient-to-r from-red-500/20 to-rose-500/20 text-red-400 border-red-500/60 hover:from-red-500/30 hover:to-rose-500/30 hover:border-red-500/80 shadow-red-500/30'
+                        : 'bg-gradient-to-r from-electric-cyan/20 to-blue-500/20 text-electric-cyan border-electric-cyan/60 hover:from-electric-cyan/30 hover:to-blue-500/30 hover:border-electric-cyan/80 shadow-electric-cyan/30'
                         }`}
                 >
-                    {isRunning ? <><Pause size={18} /> STOP SIMULATION</> : <><Play size={18} /> START LIVE DATA</>}
+                    {isRunning ? <><Pause size={20} /> STOP SIMULATION</> : <><Play size={20} /> START LIVE DATA</>}
                 </button>
             </div>
 
-            <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-400 mb-2">Select Products (Fleet View)</label>
+            <div className="mb-8 bg-slate-800/30 rounded-xl p-4 border border-slate-700/50 backdrop-blur-sm">
+                <label className="block text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                    <span className="w-1.5 h-4 bg-gradient-to-b from-electric-cyan to-blue-500 rounded-full"></span>
+                    Select Products (Fleet View)
+                </label>
                 <div className="grid grid-cols-5 gap-2">
                     {[...Array(10)].map((_, i) => {
                         const pid = i + 1;
@@ -68,9 +75,9 @@ const Sidebar = ({ data, onUpdate, isRunning, onToggle, selectedProducts = [], o
                             <button
                                 key={pid}
                                 onClick={() => onToggleProduct(pid)}
-                                className={`h-10 rounded-lg font-mono text-sm font-bold transition-all border ${isSelected
-                                    ? 'bg-electric-cyan text-slate-900 border-electric-cyan'
-                                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-electric-cyan/50'
+                                className={`h-11 rounded-lg font-mono text-sm font-bold transition-all duration-200 border-2 shadow-md ${isSelected
+                                    ? 'bg-gradient-to-br from-electric-cyan to-blue-500 text-slate-900 border-electric-cyan shadow-electric-cyan/50 scale-105'
+                                    : 'bg-gradient-to-br from-slate-800 to-slate-900 text-slate-400 border-slate-700/70 hover:border-electric-cyan/60 hover:text-white hover:scale-105 hover:shadow-lg'
                                     }`}
                             >
                                 {pid}
@@ -78,16 +85,19 @@ const Sidebar = ({ data, onUpdate, isRunning, onToggle, selectedProducts = [], o
                         );
                     })}
                 </div>
-                <div className="mt-2 flex justify-between">
-                    <button onClick={onSelectAll} className="text-xs text-electric-cyan hover:underline">Select All</button>
-                    <button onClick={onClearAll} className="text-xs text-slate-500 hover:text-white">Clear</button>
+                <div className="mt-3 flex justify-between px-1">
+                    <button onClick={onSelectAll} className="text-xs text-electric-cyan hover:text-electric-cyan/80 font-semibold transition-colors">Select All</button>
+                    <button onClick={onClearAll} className="text-xs text-slate-500 hover:text-red-400 font-semibold transition-colors">Clear All</button>
                 </div>
             </div>
 
             <div className="flex-1">
-                <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Business Cost Profile</h3>
-                    <Settings size={14} className="text-slate-600" />
+                <div className="flex items-center justify-between mb-6 bg-slate-800/30 px-4 py-3 rounded-xl border border-slate-700/50">
+                    <h3 className="text-xs font-bold text-slate-300 uppercase tracking-widest flex items-center gap-2">
+                        <span className="w-1.5 h-4 bg-gradient-to-b from-purple-500 to-indigo-500 rounded-full"></span>
+                        Business Cost Profile
+                    </h3>
+                    <Settings size={16} className="text-slate-500" />
                 </div>
 
                 <NumberInput
