@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { initialSensorData, calculateRisk } from '../utils/simulationEngine';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'https://back.globians.in';
 
 export const useSensorSimulation = () => {
     const [data, setData] = useState({ ...initialSensorData, cost_fn: 5000, cost_fp: 500 });
@@ -200,7 +200,7 @@ export const useSensorSimulation = () => {
                     cost_fn: cost_fn
                 };
 
-                const response = await fetch('http://localhost:8000/predict', {
+                const response = await fetch(`${API_BASE}/predict`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -285,7 +285,7 @@ export const useSensorSimulation = () => {
     useEffect(() => {
         selectedProducts.forEach(pid => {
             if (!historyCache[pid]) {
-                fetch(`http://localhost:8000/product/${pid}`)
+                fetch(`${API_BASE}/product/${pid}`)
                     .then(res => {
                         if (!res.ok) throw new Error("Failed");
                         return res.json();
@@ -310,7 +310,7 @@ export const useSensorSimulation = () => {
             return;
         }
         try {
-            const response = await fetch('http://localhost:8000/fleet/status', {
+            const response = await fetch(`${API_BASE}/fleet/status`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ product_ids: productIds })
@@ -360,7 +360,7 @@ export const useSensorSimulation = () => {
         // Special handling for Product ID selection
         if (key === 'product_id' && value !== "") {
             try {
-                const response = await fetch(`http://localhost:8000/product/${value}`);
+                const response = await fetch(`${API_BASE}/product/${value}`);
                 if (!response.ok) throw new Error("Product not found");
                 const historyData = await response.json();
 

@@ -42,7 +42,7 @@ function App() {
     setIsSendingEmail(true);
     setEmailStatus(null);
     try {
-      const response = await fetch('http://localhost:8000/alert/send', {
+      const response = await fetch('https://back.globians.in/alert/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
