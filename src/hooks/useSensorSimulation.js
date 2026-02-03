@@ -48,8 +48,8 @@ export const useSensorSimulation = () => {
     const buildLiveFleetData = useCallback((productRisks) => {
         // productRisks: { pid: riskValue }
         const getRiskCategory = (risk) => {
-            if (risk >= 70) return "High Risk";
-            if (risk >= 40) return "Medium Risk";
+            if (risk > 80) return "High Risk";
+            if (risk > 50) return "Medium Risk";
             return "Low Risk";
         };
 

@@ -10,12 +10,19 @@ const COLORS = {
 const CustomContent = (props) => {
     const { depth, x, y, width, height, name, prob } = props;
     
-    // Get parent category color for leaf nodes
+    // Get color based on risk category or risk value
     const getColor = () => {
-        if (depth === 1) return COLORS[name];
-        // For depth 2, check parent name from props
-        const parentName = props.root?.name;
-        return COLORS[parentName] || "#6366f1";
+        // For category labels (depth 1)
+        if (depth === 1) return COLORS[name] || "#6366f1";
+        
+        // For leaf nodes (depth 2), determine color from prob value
+        if (prob !== undefined) {
+            if (prob > 80) return COLORS["High Risk"];
+            if (prob > 50) return COLORS["Medium Risk"];
+            return COLORS["Low Risk"];
+        }
+        
+        return "#10b981"; // Default green
     };
 
     return (
@@ -42,7 +49,7 @@ const CustomContent = (props) => {
                         fontSize={9}
                         fontWeight="bold"
                     >
-                        {name?.replace('Product_', 'P')}
+                        {name?.replace('Product_', 'P').replace('Turbine_', 'T').replace('Generator_', 'G')}
                     </text>
                     <text
                         x={x + width / 2}
@@ -88,32 +95,26 @@ const CustomTooltip = ({ active, payload }) => {
 const RiskTreeMap = ({ data }) => {
     if (!data || data.length === 0) {
         return (
-            <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700/50 h-64 flex items-center justify-center text-slate-500" style={{ minWidth: 0, minHeight: 0 }}>
-                Select multiple products to view Fleet Risk Map
+            <div className="flex items-center justify-center h-full text-slate-500">
+                Select products to view Fleet Risk Map
             </div>
         );
     }
 
     return (
-        <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700/50 h-96" style={{ minWidth: 0, minHeight: 0 }}>
-            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <span className="w-2 h-6 bg-purple-500 rounded-full"></span>
-                Fleet Risk Assessment
-            </h3>
-            <ResponsiveContainer width="100%" height="100%">
-                <Treemap
-                    data={data}
-                    dataKey="size"
-                    aspectRatio={4 / 3}
-                    stroke="#fff"
-                    fill="#8884d8"
-                    content={<CustomContent />}
-                    isAnimationActive={false}
-                >
-                    <Tooltip content={<CustomTooltip />} />
-                </Treemap>
-            </ResponsiveContainer>
-        </div>
+        <ResponsiveContainer width="100%" height="100%">
+            <Treemap
+                data={data}
+                dataKey="size"
+                aspectRatio={4 / 3}
+                stroke="#fff"
+                fill="#1fad13"
+                content={<CustomContent />}
+                isAnimationActive={false}
+            >
+                <Tooltip content={<CustomTooltip />} />
+            </Treemap>
+        </ResponsiveContainer>
     );
 };
 

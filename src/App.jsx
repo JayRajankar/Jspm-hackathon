@@ -9,9 +9,10 @@ import AlertPanel from './components/Dashboard/AlertPanel';
 import RiskTreeMap from './components/Dashboard/RiskTreeMap';
 import { useSensorSimulation } from './hooks/useSensorSimulation';
 import TurbineDashboard from './components/TurbineDashboard';
+import GeneratorDashboard from './components/GeneratorDashboard';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('equipment'); // 'equipment' or 'turbine'
+  const [activeTab, setActiveTab] = useState('equipment'); // 'equipment', 'turbine', or 'generator'
   
   const {
     data,
@@ -221,7 +222,7 @@ function App() {
           <div className="inline-flex bg-gradient-to-b from-slate-900/90 to-slate-900/70 backdrop-blur-xl rounded-2xl p-2 border border-slate-700/60 shadow-2xl shadow-slate-950/50">
             <button
               onClick={() => setActiveTab('equipment')}
-              className={`group relative px-10 py-4 rounded-xl font-bold transition-all duration-300 flex items-center gap-3 overflow-hidden ${
+              className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 flex items-center gap-3 overflow-hidden ${
                 activeTab === 'equipment'
                   ? 'bg-gradient-to-r from-blue-600 via-cyan-600 to-blue-600 text-white shadow-xl shadow-blue-500/40 scale-105'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/60 hover:scale-102'
@@ -235,11 +236,11 @@ function App() {
               }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
               </svg>
-              <span className="relative z-10">Equipment Health Monitor</span>
+              <span className="relative z-10">Equipment</span>
             </button>
             <button
               onClick={() => setActiveTab('turbine')}
-              className={`group relative px-10 py-4 rounded-xl font-bold transition-all duration-300 flex items-center gap-3 overflow-hidden ${
+              className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 flex items-center gap-3 overflow-hidden ${
                 activeTab === 'turbine'
                   ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 text-white shadow-xl shadow-emerald-500/40 scale-105'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/60 hover:scale-102'
@@ -253,13 +254,33 @@ function App() {
               }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
-              <span className="relative z-10">Turbine System Monitor</span>
+              <span className="relative z-10">Turbine</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('generator')}
+              className={`group relative px-8 py-4 rounded-xl font-bold transition-all duration-300 flex items-center gap-3 overflow-hidden ${
+                activeTab === 'generator'
+                  ? 'bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 text-white shadow-xl shadow-purple-500/40 scale-105'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60 hover:scale-102'
+              }`}
+            >
+              {activeTab === 'generator' && (
+                <div className="absolute inset-0 bg-gradient-to-r from-purple-400/20 via-pink-400/20 to-purple-400/20 animate-pulse"></div>
+              )}
+              <svg className={`w-6 h-6 relative z-10 transition-transform duration-300 ${
+                activeTab === 'generator' ? 'scale-110' : 'group-hover:scale-110'
+              }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+              </svg>
+              <span className="relative z-10">Generator</span>
             </button>
           </div>
         </div>
 
         {/* Render Active Dashboard */}
-        {activeTab === 'equipment' ? renderEquipmentDashboard() : <TurbineDashboard />}
+        {activeTab === 'equipment' ? renderEquipmentDashboard() : 
+         activeTab === 'turbine' ? <TurbineDashboard /> : 
+         <GeneratorDashboard />}
       </main>
     </div>
   );

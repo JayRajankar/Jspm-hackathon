@@ -49,8 +49,8 @@ export const useTurbineSimulation = () => {
     // Build live fleet data for treemap
     const buildLiveFleetData = useCallback((turbineRisks) => {
         const getRiskCategory = (risk) => {
-            if (risk >= 70) return "High Risk";
-            if (risk >= 40) return "Medium Risk";
+            if (risk > 80) return "High Risk";
+            if (risk > 50) return "Medium Risk";
             return "Low Risk";
         };
 
@@ -90,7 +90,6 @@ export const useTurbineSimulation = () => {
         if (selectedTurbines.length > 1) {
             // Multi-turbine live playback
             const historyPoint = { timestamp };
-            const currentRisks = {};
             
             setPlaybackIndex(prevIndices => {
                 const newIndices = { ...prevIndices };
@@ -103,7 +102,6 @@ export const useTurbineSimulation = () => {
                         
                         const displayRisk = applyRiskSuppression(tid, point.risk);
                         historyPoint[`Turbine_${tid}`] = displayRisk;
-                        currentRisks[tid] = displayRisk;
                         
                         newIndices[tid] = (currentIdx + 1) % turbineHistory.length;
                     }
@@ -113,10 +111,6 @@ export const useTurbineSimulation = () => {
             });
             
             setMultiHistory(prev => [...prev, historyPoint].slice(-50));
-            
-            // Update treemap with live risk values
-            const liveTreeData = buildLiveFleetData(currentRisks);
-            setFleetData(liveTreeData);
             
         } else if (selectedTurbines.length === 1) {
             // Single turbine playback
@@ -202,8 +196,8 @@ export const useTurbineSimulation = () => {
                 
                 // Convert to treemap format
                 const getRiskCategory = (risk) => {
-                    if (risk >= 70) return "High Risk";
-                    if (risk >= 40) return "Medium Risk";
+                    if (risk > 80) return "High Risk";
+                    if (risk > 50) return "Medium Risk";
                     return "Low Risk";
                 };
 
@@ -239,22 +233,28 @@ export const useTurbineSimulation = () => {
         }
     }, []);
 
-    // Initial fleet fetch
+    // Initial fleet fetch and periodic refresh
     useEffect(() => {
         fetchFleetStatus();
+        const interval = setInterval(fetchFleetStatus, 5000); // Refresh every 5 seconds
+        return () => clearInterval(interval);
     }, [fetchFleetStatus]);
 
     const toggleSimulation = useCallback(() => {
         setIsRunning(prev => !prev);
         if (!isRunning) {
             setLogs(prev => [...prev, { 
+                id: Date.now(),
                 time: new Date().toLocaleTimeString(), 
-                message: 'Simulation started' 
+                message: 'Simulation started',
+                type: 'info'
             }]);
         } else {
             setLogs(prev => [...prev, { 
+                id: Date.now(),
                 time: new Date().toLocaleTimeString(), 
-                message: 'Simulation paused' 
+                message: 'Simulation paused',
+                type: 'info'
             }]);
         }
     }, [isRunning]);
@@ -266,8 +266,10 @@ export const useTurbineSimulation = () => {
         setPlaybackIndex({});
         suppressionCounterRef.current = {};
         setLogs([{ 
+            id: Date.now(),
             time: new Date().toLocaleTimeString(), 
-            message: 'Simulation reset' 
+            message: 'Simulation reset',
+            type: 'info'
         }]);
     }, []);
 

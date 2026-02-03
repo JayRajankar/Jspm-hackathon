@@ -775,12 +775,179 @@ def get_turbine_fleet_status():
         print(f"Fleet status error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ============== GENERATOR SYSTEM ==============
+
+# Load Generator Model and Data
+GENERATOR_MODEL_PATH = "generator_model.pkl"
+GENERATOR_COLUMNS_PATH = "generator_model_columns.pkl"
+GENERATOR_DATA_PATH = "generator_test_data.csv"
+
+try:
+    if os.path.exists(GENERATOR_MODEL_PATH) and os.path.exists(GENERATOR_COLUMNS_PATH):
+        generator_model = joblib.load(GENERATOR_MODEL_PATH)
+        generator_columns = joblib.load(GENERATOR_COLUMNS_PATH)
+        generator_data = pd.read_csv(GENERATOR_DATA_PATH)
+        print(f"✅ Generator model loaded. Columns: {generator_columns}")
+        print(f"✅ Generator test data loaded. Shape: {generator_data.shape}")
+    else:
+        print("⚠️ Warning: generator model files not found.")
+        generator_model = None
+        generator_columns = None
+        generator_data = None
+except Exception as e:
+    print(f"❌ Error loading generator model: {e}")
+    generator_model = None
+    generator_columns = None
+    generator_data = None
+
+# Generator Input Schema
+class GeneratorInput(BaseModel):
+    air_temp: float
+    core_temp: float
+    rpm: float
+    torque: float
+    wear: float
+
+def create_generator_features(air_temp, core_temp, rpm, torque, wear):
+    """
+    Create feature DataFrame for generator model prediction
+    Uses only raw features as model was trained on them
+    """
+    # Return DataFrame with raw features only
+    features_dict = {
+        'air_temp': air_temp,
+        'core_temp': core_temp,
+        'rpm': rpm,
+        'torque': torque,
+        'wear': wear
+    }
+    
+    return pd.DataFrame([features_dict])
+
+@app.get("/generator/{generator_id}")
+def get_generator_data(generator_id: str):
+    """
+    Get historical data and predictions for a specific generator
+    """
+    if generator_model is None or generator_data is None:
+        raise HTTPException(status_code=503, detail="Generator model not available")
+    
+    try:
+        # Extract generator number from ID (e.g., "Generator_1" -> 1)
+        gen_num = int(generator_id.split('_')[1])
+        
+        # Calculate chunk size for each generator
+        chunk_size = len(generator_data) // 10
+        start_idx = (gen_num - 1) * chunk_size
+        end_idx = start_idx + chunk_size if gen_num < 10 else len(generator_data)
+        
+        # Get data chunk for this generator
+        generator_chunk = generator_data.iloc[start_idx:end_idx]
+        
+        results = []
+        for _, row in generator_chunk.iterrows():
+            # Create features with engineering
+            input_df = create_generator_features(
+                row['air_temp'], row['core_temp'], row['rpm'], 
+                row['torque'], row['wear']
+            )
+            
+            # Predict
+            probabilities = generator_model.predict_proba(input_df)[0]
+            
+            results.append({
+                "air_temp": float(row['air_temp']),
+                "core_temp": float(row['core_temp']),
+                "rpm": float(row['rpm']),
+                "torque": float(row['torque']),
+                "wear": float(row['wear']),
+                "risk": float(probabilities[1] * 100)
+            })
+        
+        return {"generator_id": generator_id, "history": results}
+    
+    except Exception as e:
+        print(f"Generator data error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/generator/predict")
+def predict_generator(input_data: GeneratorInput):
+    """
+    Real-time prediction for generator data
+    """
+    if generator_model is None:
+        raise HTTPException(status_code=503, detail="Generator model not available")
+    
+    try:
+        # Create features with engineering
+        input_df = create_generator_features(
+            input_data.air_temp, input_data.core_temp, input_data.rpm,
+            input_data.torque, input_data.wear
+        )
+        
+        # Predict
+        probabilities = generator_model.predict_proba(input_df)[0]
+        risk = probabilities[1] * 100
+        
+        return {
+            "risk": float(risk),
+            "status": "High Risk" if risk >= 70 else "Medium Risk" if risk >= 40 else "Low Risk"
+        }
+    
+    except Exception as e:
+        print(f"Generator prediction error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/generator/fleet/status")
+def get_generator_fleet_status(generator_ids: list[str]):
+    """
+    Get fleet status for multiple generators
+    """
+    if generator_model is None or generator_data is None:
+        raise HTTPException(status_code=503, detail="Generator model not available")
+    
+    try:
+        fleet_status = []
+        chunk_size = len(generator_data) // 10
+        
+        for generator_id in generator_ids:
+            gen_num = int(generator_id.split('_')[1]) if '_' in generator_id else int(generator_id)
+            start_idx = (gen_num - 1) * chunk_size
+            end_idx = start_idx + chunk_size if gen_num < 10 else len(generator_data)
+            
+            generator_chunk = generator_data.iloc[start_idx:end_idx]
+            
+            # Calculate average risk for this generator
+            risks = []
+            for _, row in generator_chunk.iterrows():
+                input_df = create_generator_features(
+                    row['air_temp'], row['core_temp'], row['rpm'],
+                    row['torque'], row['wear']
+                )
+                probabilities = generator_model.predict_proba(input_df)[0]
+                risks.append(probabilities[1] * 100)
+            
+            avg_risk = float(np.mean(risks))
+            
+            fleet_status.append({
+                "generator_id": f"Generator_{gen_num}",
+                "risk": avg_risk,
+                "name": f"Generator_{gen_num}"
+            })
+        
+        return {"fleet": fleet_status}
+    
+    except Exception as e:
+        print(f"Generator fleet status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/")
 def health_check():
     return {
         "status": "online", 
         "model_loaded": model is not None,
-        "turbine_model_loaded": turbine_model is not None
+        "turbine_model_loaded": turbine_model is not None,
+        "generator_model_loaded": generator_model is not None
     }
 
 if __name__ == "__main__":

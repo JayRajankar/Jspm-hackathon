@@ -1,7 +1,7 @@
 import React from 'react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
-const COLORS = ['#06b6d4', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#3b82f6', '#ef4444', '#14b8a6', '#f97316', '#6366f1'];
+const COLORS = ['#06b6d4', '#1bc252', '#8f6f6f', '#f59e0b', '#ec4899', '#3b82f6', '#ef4444', '#14b8a6', '#f97316', '#6366f1'];
 
 const TrendGraph = ({ history, selectedProducts = [] }) => {
     const isMulti = selectedProducts.length > 1;
@@ -15,7 +15,7 @@ const TrendGraph = ({ history, selectedProducts = [] }) => {
                 <ResponsiveContainer width="100%" height="100%">
                     {isMulti ? (
                         <LineChart data={history} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                            <CartesianGrid strokeDasharray="3 3" stroke="#05b105" vertical={false} />
                             <XAxis dataKey="timestamp" tick={false} axisLine={false} />
                             <YAxis stroke="#64748b" fontSize={11} domain={[0, 100]} tickLine={false} axisLine={false} />
                             <Tooltip
