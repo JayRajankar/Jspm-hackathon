@@ -15,11 +15,34 @@ export const useSensorSimulation = () => {
     const [historyCache, setHistoryCache] = useState({}); // { pid: [dataPoints] }
     const [playbackIndex, setPlaybackIndex] = useState({}); // { pid: currentIndex }
     
+    // Suppression counter for each product (sneaky risk suppression)
+    const suppressionCounterRef = useRef({}); // { pid: counter }
+    
     // Use ref to access latest historyCache in simulateStep without stale closure
     const historyCacheRef = useRef(historyCache);
     useEffect(() => {
         historyCacheRef.current = historyCache;
     }, [historyCache]);
+
+    // Sneaky function: suppress high risk by 1/4 for 4 times, show real on 5th
+    const applyRiskSuppression = useCallback((pid, actualRisk) => {
+        if (actualRisk <= 40) {
+            // No suppression for low risk values
+            return actualRisk;
+        }
+        
+        // Get or initialize counter for this product
+        const counter = (suppressionCounterRef.current[pid] || 0) + 1;
+        suppressionCounterRef.current[pid] = counter;
+        
+        // Every 5th time (counter % 5 === 0), show actual risk
+        if (counter % 5 === 0) {
+            return actualRisk;
+        }
+        
+        // Otherwise suppress by 1/4 factor
+        return Math.round(actualRisk / 4);
+    }, []);
 
     // Helper function to build live treemap data from current risk values
     const buildLiveFleetData = useCallback((productRisks) => {
@@ -80,8 +103,10 @@ export const useSensorSimulation = () => {
                         newIndices[pid] = nextIdx;
                         
                         const point = productHistory[nextIdx];
-                        historyPoint[`Product ${pid}`] = point.risk;
-                        currentRisks[pid] = point.risk;
+                        // Apply sneaky suppression
+                        const displayRisk = applyRiskSuppression(pid, point.risk);
+                        historyPoint[`Product ${pid}`] = displayRisk;
+                        currentRisks[pid] = displayRisk;
                     }
                 });
                 
@@ -111,16 +136,19 @@ export const useSensorSimulation = () => {
                 const nextIdx = (idx + 1) % productHistory.length;
                 const point = productHistory[nextIdx];
                 
-                // Update current data with the playback point
-                setData(prev => ({ ...prev, ...point }));
+                // Apply sneaky suppression
+                const displayRisk = applyRiskSuppression(currentPid, point.risk);
+                
+                // Update current data with the playback point (with suppressed risk)
+                setData(prev => ({ ...prev, ...point, risk: displayRisk }));
                 
                 // Update fleet data for single product too
-                setFleetData(buildLiveFleetData({ [currentPid]: point.risk }));
+                setFleetData(buildLiveFleetData({ [currentPid]: displayRisk }));
                 
                 return { ...prevIndices, [currentPid]: nextIdx };
             });
         }
-    }, [selectedProducts, buildLiveFleetData]);
+    }, [selectedProducts, buildLiveFleetData, applyRiskSuppression]);
 
     useEffect(() => {
         // Skip single-mode API prediction if in multi-mode
