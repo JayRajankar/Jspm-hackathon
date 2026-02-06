@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-const API_BASE = 'https://back.globians.in';
+const API_BASE = 'http://localhost:8000';
 const SAMPLE_INTERVAL = 3; // Show every 3rd point
 
 export const useGeneratorSimulation = () => {

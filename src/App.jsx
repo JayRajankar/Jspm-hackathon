@@ -28,11 +28,14 @@ function App() {
     updateCost,
     logs,
     selectedProducts,
+    latestRisks,
     fleetData,
     toggleProduct,
     selectAllProducts,
     clearAllProducts
   } = useSensorSimulation();
+
+  const API_BASE = 'https://back.globians.in';
 
   // Email test state
   const [emailStatus, setEmailStatus] = useState(null);
@@ -42,22 +45,28 @@ function App() {
     setIsSendingEmail(true);
     setEmailStatus(null);
     try {
-      const response = await fetch('https://back.globians.in/alert/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          product_id: selectedProducts.length > 0 ? `Product_${selectedProducts[0]}` : "Test_Product",
-          risk_value: riskAnalysis.risk || 75,
-          sensor_data: {
-            air_temp: data.airTemp,
-            proc_temp: data.processTemp,
-            rpm: data.rpm,
-            torque: data.torque,
-            tool_wear: data.toolWear
-          }
+      const targets = selectedProducts.length > 0 ? selectedProducts : [null];
+      await Promise.all(
+        targets.map(pid => {
+          const riskValue = pid ? latestRisks?.[pid] ?? riskAnalysis.risk ?? 75 : riskAnalysis.risk ?? 75;
+          const productId = pid ? `Product_${pid}` : "Test_Product";
+          return fetch(`${API_BASE}/alert/send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              product_id: productId,
+              risk_value: riskValue,
+              sensor_data: {
+                air_temp: data.airTemp,
+                proc_temp: data.processTemp,
+                rpm: data.rpm,
+                torque: data.torque,
+                tool_wear: data.toolWear
+              }
+            })
+          });
         })
-      });
-      const result = await response.json();
+      );
       setEmailStatus({ success: true, message: "Email alert sent!" });
     } catch (err) {
       setEmailStatus({ success: false, message: "Failed to send email" });
@@ -68,6 +77,7 @@ function App() {
 
   // Use multiHistory for multi-product, single history for single product
   const graphHistory = selectedProducts.length > 1 ? multiHistory : history;
+
 
   // Show loading screen while checking auth
   if (isLoading) {

@@ -12,6 +12,10 @@ export const useSensorSimulation = () => {
     const [logs, setLogs] = useState([]);
     const [selectedProducts, setSelectedProducts] = useState([]);
     const [fleetData, setFleetData] = useState([]);
+    const [latestRisks, setLatestRisks] = useState({});
+    const alertCooldownRef = useRef({});
+    const ALERT_THRESHOLD = 80;
+    const ALERT_COOLDOWN_MS = 60 * 1000;
 
     // History Playback State
     const [historyCache, setHistoryCache] = useState({}); // { pid: [dataPoints] }
@@ -28,6 +32,28 @@ export const useSensorSimulation = () => {
     useEffect(() => {
         historyCacheRef.current = historyCache;
     }, [historyCache]);
+
+    const triggerAlertCheck = useCallback((pid, riskValue, sensorData) => {
+        if (typeof riskValue !== 'number' || riskValue < ALERT_THRESHOLD) return;
+
+        const now = Date.now();
+        const lastSent = alertCooldownRef.current[pid] || 0;
+        if (now - lastSent < ALERT_COOLDOWN_MS) return;
+
+        alertCooldownRef.current[pid] = now;
+
+        fetch(`${API_BASE}/alert/check`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                product_id: `Product_${pid}`,
+                risk_value: riskValue,
+                sensor_data: sensorData || null
+            })
+        }).catch(() => {
+            // ignore network errors for background checks
+        });
+    }, [ALERT_THRESHOLD, ALERT_COOLDOWN_MS]);
 
     // Sneaky function: suppress high risk by 1/4 for 4 times, show real on 5th
     const applyRiskSuppression = useCallback((pid, actualRisk) => {
@@ -96,6 +122,7 @@ export const useSensorSimulation = () => {
             // Multi-Product Live Playback
             const historyPoint = { timestamp };
             const currentRisks = {}; // Track current risk for each product
+            const currentSensorData = {};
             
             setPlaybackIndex(prevIndices => {
                 const newIndices = { ...prevIndices };
@@ -112,12 +139,23 @@ export const useSensorSimulation = () => {
                         const displayRisk = applyRiskSuppression(pid, point.risk);
                         historyPoint[`Product ${pid}`] = displayRisk;
                         currentRisks[pid] = displayRisk;
+                        currentSensorData[pid] = {
+                            air_temp: point.airTemp,
+                            proc_temp: point.processTemp,
+                            rpm: point.rpm,
+                            torque: point.torque,
+                            tool_wear: point.toolWear
+                        };
                     }
                 });
                 
                 // Update fleet data with live risk values
                 if (Object.keys(currentRisks).length > 0) {
                     setFleetData(buildLiveFleetData(currentRisks));
+                    setLatestRisks(currentRisks);
+                    Object.entries(currentRisks).forEach(([pid, riskValue]) => {
+                        triggerAlertCheck(pid, riskValue, currentSensorData[pid]);
+                    });
                 }
                 
                 return newIndices;
@@ -171,6 +209,14 @@ export const useSensorSimulation = () => {
                 
                 // Update fleet data for single product too
                 setFleetData(buildLiveFleetData({ [currentPid]: displayRisk }));
+                setLatestRisks({ [currentPid]: displayRisk });
+                triggerAlertCheck(currentPid, displayRisk, {
+                    air_temp: point.airTemp,
+                    proc_temp: point.processTemp,
+                    rpm: point.rpm,
+                    torque: point.torque,
+                    tool_wear: point.toolWear
+                });
                 
                 return { ...prevIndices, [currentPid]: nextIdx };
             });
@@ -464,6 +510,7 @@ export const useSensorSimulation = () => {
         updateCost,
         logs,
         selectedProducts,
+        latestRisks,
         fleetData,
         toggleProduct,
         selectAllProducts,

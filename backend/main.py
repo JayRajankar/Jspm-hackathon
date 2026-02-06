@@ -228,11 +228,15 @@ def send_threshold_alert(
 def send_alert_with_followup(product_id: str, metric_name: str, value: float, threshold: float, sensor_data: dict = None):
     """Send alert and schedule Telegram follow-up call."""
     email_sent = send_threshold_alert(product_id, metric_name, value, threshold, sensor_data)
-    
-    if email_sent and FOLLOWUP_SECONDS > 0:
+
+    if not email_sent:
+        print(f"⚠️ Email alert failed for {product_id}, attempting Telegram call anyway.")
+
+    if FOLLOWUP_SECONDS >= 0:
         def followup_call():
-            print(f"⏳ Waiting {FOLLOWUP_SECONDS} seconds before Telegram call...")
-            time.sleep(FOLLOWUP_SECONDS)
+            if FOLLOWUP_SECONDS > 0:
+                print(f"⏳ Waiting {FOLLOWUP_SECONDS} seconds before Telegram call...")
+                time.sleep(FOLLOWUP_SECONDS)
             try:
                 params = {
                     "source": "web",
